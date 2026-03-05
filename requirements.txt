@@ -1,4 +1,4 @@
 chromadb>=0.5
 pymupdf>=1.24
 python-dotenv>=1.0
-duckduckgo-search>=6.0
+ddgs>=9.0

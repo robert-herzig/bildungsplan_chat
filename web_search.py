@@ -18,12 +18,15 @@ def main():
     max_results = int(sys.argv[2]) if len(sys.argv) > 2 else 4
 
     try:
-        from duckduckgo_search import DDGS
+        from ddgs import DDGS
     except ImportError:
-        print("[]", file=sys.stderr)
-        print("duckduckgo_search nicht installiert. Installiere mit: pip3 install duckduckgo_search", file=sys.stderr)
-        print("[]")
-        sys.exit(0)
+        try:
+            from duckduckgo_search import DDGS
+        except ImportError:
+            print("[]", file=sys.stderr)
+            print("ddgs nicht installiert. Installiere mit: pip3 install ddgs", file=sys.stderr)
+            print("[]")
+            sys.exit(0)
 
     try:
         results = []
