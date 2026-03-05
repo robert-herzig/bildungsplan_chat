@@ -174,7 +174,7 @@
       contentDiv.innerHTML = formatMarkdown(data.answer);
       chatHistory.push({ role: 'user', content: text });
       chatHistory.push({ role: 'assistant', content: data.answer });
-      renderSources(sourcesDiv, data.sources);
+      renderSources(sourcesDiv, data.sources, data.webSources, data.mode);
       scrollToBottom();
     }
 
@@ -217,7 +217,7 @@
             const obj = JSON.parse(payload);
             // Sources message
             if (obj.type === 'sources') {
-              renderSources(sourcesDiv, obj.sources);
+              renderSources(sourcesDiv, obj.sources, obj.webSources, obj.mode);
               sourcesRendered = true;
               continue;
             }
@@ -247,13 +247,26 @@
       return bubble;
     }
 
-    function renderSources(container, sources) {
-      if (!sources || sources.length === 0) return;
-      let html = '<div class="sources-label">📎 Quellen:</div><div class="sources-list">';
-      for (const s of sources) {
-        html += `<span class="source-tag">${escapeHtml(s.source)} – S. ${s.page}</span>`;
+    function renderSources(container, sources, webSources, mode) {
+      const hasDoc = sources && sources.length > 0;
+      const hasWeb = webSources && webSources.length > 0;
+      if (!hasDoc && !hasWeb) return;
+
+      let html = '';
+      if (hasDoc) {
+        html += '<div class="sources-label">📎 Bildungsplan-Quellen:</div><div class="sources-list">';
+        for (const s of sources) {
+          html += `<span class="source-tag">${escapeHtml(s.source)} – S. ${s.page}</span>`;
+        }
+        html += '</div>';
       }
-      html += '</div>';
+      if (hasWeb) {
+        html += '<div class="sources-label" style="margin-top:6px">🌐 Web-Quellen:</div><div class="sources-list">';
+        for (const s of webSources) {
+          html += `<a class="source-tag web-tag" href="${escapeHtml(s.url)}" target="_blank" rel="noopener">${escapeHtml(s.title || s.url)}</a>`;
+        }
+        html += '</div>';
+      }
       container.innerHTML = html;
     }
 

@@ -243,6 +243,17 @@ button, input, textarea, select {
     border-radius: 999px;
 }
 
+.web-tag {
+    text-decoration: none;
+    color: #60a5fa;
+    border-color: #1e3a5f;
+    background: #0f2236;
+}
+
+.web-tag:hover {
+    background: #1e3a5f;
+}
+
 /* ── Input area ─────────────────────────────────────── */
 .input-area {
     flex-shrink: 0;

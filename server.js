@@ -8,7 +8,7 @@ const path = require("path");
 const fs = require("fs/promises");
 require("dotenv").config();
 
-const { ChromaClient } = require("chromadb");
+const { execFile } = require("child_process");
 
 const app = express();
 app.use(express.json({ limit: "1mb" }));
@@ -20,6 +20,7 @@ const MODEL = process.env.MISTRAL_MODEL || "mistral-small-latest";
 const CHROMA_DB_PATH = process.env.CHROMA_DB_PATH || "./chroma_db";
 const COLLECTION_NAME = "bildungsplan";
 const TOP_K = parseInt(process.env.TOP_K || "8", 10);
+const MIN_RELEVANCE_SCORE = parseFloat(process.env.MIN_RELEVANCE_SCORE || "0.79");
 const PORT = parseInt(process.env.PORT || "5001", 10);
 const HOST = process.env.HOST || "127.0.0.1";
 const TIMEOUT = parseInt(process.env.MODEL_TIMEOUT || "120", 10) * 1000;
@@ -62,91 +63,95 @@ async function readSystemPrompt() {
   }
 }
 
-let chromaCollection = null;
+// ── RAG & search helpers ────────────────────────────────────────────
 
-async function getCollection() {
-  if (chromaCollection) return chromaCollection;
-  try {
-    const client = new ChromaClient({ path: undefined });
-    // For persistent client we use the chromadb npm with path config
-    // Actually chromadb JS client connects to a running Chroma server.
-    // We'll query the DB directly via the REST API or use a simpler approach.
-    // Since we store with Python, let's query via file-based approach.
-    chromaCollection = "placeholder";
-    return chromaCollection;
-  } catch (e) {
-    console.error("ChromaDB Fehler:", e.message);
-    return null;
-  }
+/** Short or clearly conversational messages – skip RAG entirely */
+function isConversational(msg) {
+  const t = msg.trim();
+  if (t.length < 20) return true;
+  if (/^(test|hallo|hi|hey|danke|ok|okay|ja|nein|bitte|super|gut|tschüss|ciao|moin|servus|guten\s+\w+)[\s!?.]*$/i.test(t)) return true;
+  return false;
 }
 
-async function getQueryEmbedding(text) {
-  const resp = await fetch(API_BASE + "/embeddings", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: "Bearer " + API_KEY,
-    },
-    body: JSON.stringify({
-      model: "mistral-embed",
-      input: [text],
-    }),
-  });
-  if (!resp.ok) {
-    const err = await resp.text();
-    throw new Error("Embedding-Fehler: " + err);
-  }
-  const data = await resp.json();
-  return data.data[0].embedding;
-}
-
-// Cosine similarity
-function cosineSim(a, b) {
-  let dot = 0, magA = 0, magB = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    magA += a[i] * a[i];
-    magB += b[i] * b[i];
-  }
-  return dot / (Math.sqrt(magA) * Math.sqrt(magB));
-}
-
-// Direct ChromaDB file-based query using the SQLite + parquet files
-// Since chromadb JS client needs a server, we'll run a tiny Python helper
+/** Query ChromaDB via the Python helper script */
 async function queryChromaDB(queryText, topK) {
-  const { execFile } = require("child_process");
-  return new Promise((resolve, reject) => {
-    const proc = execFile(
+  return new Promise((resolve) => {
+    execFile(
       "python3",
       [path.join(__dirname, "query_helper.py"), queryText, String(topK)],
       { cwd: __dirname, timeout: 30000 },
       (err, stdout, stderr) => {
-        if (err) {
-          console.error("ChromaDB query error:", stderr);
-          resolve([]);
-          return;
-        }
-        try {
-          resolve(JSON.parse(stdout));
-        } catch (e) {
-          console.error("JSON parse error:", stdout);
-          resolve([]);
-        }
+        if (err) { console.error("ChromaDB query error:", stderr); resolve([]); return; }
+        try { resolve(JSON.parse(stdout)); }
+        catch { console.error("JSON parse error:", stdout); resolve([]); }
       }
     );
   });
 }
 
-function formatContext(chunks) {
-  if (!chunks || chunks.length === 0) {
-    return "Es wurden keine relevanten Informationen in den Dokumenten gefunden.";
-  }
+/** DuckDuckGo web search via the Python helper script */
+async function searchWeb(query, maxResults = 4) {
+  return new Promise((resolve) => {
+    execFile(
+      "python3",
+      [path.join(__dirname, "web_search.py"), query, String(maxResults)],
+      { cwd: __dirname, timeout: 15000 },
+      (err, stdout, stderr) => {
+        if (err) { console.error("Web search error:", stderr || err.message); resolve([]); return; }
+        try { resolve(JSON.parse(stdout)); }
+        catch { resolve([]); }
+      }
+    );
+  });
+}
+
+function formatDocContext(chunks) {
   return chunks
-    .map(
-      (c, i) =>
-        `[Quelle: ${c.source}, Seite ${c.page}]\n${c.text}`
-    )
+    .map((c) => `[Quelle: ${c.source}, Seite ${c.page}]\n${c.text}`)
     .join("\n\n---\n\n");
+}
+
+function formatWebResults(results) {
+  return results
+    .map((r, i) => `[${i + 1}] ${r.title}\n${r.url}\n${r.snippet}`)
+    .join("\n\n");
+}
+
+/**
+ * Central context builder.
+ * Returns { contextText, chunks, webResults, mode }
+ * mode: 'docs' | 'web' | 'none'
+ */
+async function buildContext(message) {
+  if (isConversational(message)) {
+    return { contextText: "", chunks: [], webResults: [], mode: "none" };
+  }
+
+  // 1. Try document search
+  const allChunks = await queryChromaDB(message, TOP_K);
+  const chunks = allChunks.filter((c) => c.score >= MIN_RELEVANCE_SCORE);
+
+  if (chunks.length > 0) {
+    return {
+      contextText: `Relevante Auszüge aus dem Bildungsplan GENT:\n\n${formatDocContext(chunks)}`,
+      chunks,
+      webResults: [],
+      mode: "docs",
+    };
+  }
+
+  // 2. Fallback: web search
+  const webResults = await searchWeb(message, 4);
+  if (webResults.length > 0) {
+    return {
+      contextText: `Ergebnisse aus der Websuche:\n\n${formatWebResults(webResults)}`,
+      chunks: [],
+      webResults,
+      mode: "web",
+    };
+  }
+
+  return { contextText: "", chunks: [], webResults: [], mode: "none" };
 }
 
 // ── API endpoints ───────────────────────────────────────────────────
@@ -174,35 +179,25 @@ app.post("/chat", async (req, res) => {
   if (!message) return res.status(400).json({ error: "Keine Nachricht." });
 
   try {
-    // 1. RAG retrieval
-    const chunks = await queryChromaDB(message, TOP_K);
-    const context = formatContext(chunks);
+    // 1. Build context (docs → web → none)
+    const { contextText, chunks, webResults, mode } = await buildContext(message);
 
     // 2. Build messages
     const systemPrompt = await readSystemPrompt();
     const messages = [{ role: "system", content: systemPrompt }];
+    if (history && Array.isArray(history)) messages.push(...history.slice(-20));
 
-    // Add conversation history (last 20 messages)
-    if (history && Array.isArray(history)) {
-      const recentHistory = history.slice(-20);
-      messages.push(...recentHistory);
-    }
-
-    // User message with RAG context
-    const augmentedMessage =
-      `Kontext aus dem Bildungsplan:\n\n${context}\n\n---\n\nFrage der Lehrkraft: ${message}`;
+    const augmentedMessage = contextText
+      ? `${contextText}\n\n---\n\nFrage der Lehrkraft: ${message}`
+      : message;
     messages.push({ role: "user", content: augmentedMessage });
 
     // 3. Call Mistral
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), TIMEOUT);
-
     const resp = await fetch(API_BASE + "/chat/completions", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer " + API_KEY,
-      },
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + API_KEY },
       body: JSON.stringify({ model: MODEL, messages }),
       signal: controller.signal,
     });
@@ -221,13 +216,11 @@ app.post("/chat", async (req, res) => {
     const seen = new Set();
     for (const c of chunks) {
       const key = c.source + "::" + c.page;
-      if (!seen.has(key)) {
-        seen.add(key);
-        sources.push({ source: c.source, page: c.page });
-      }
+      if (!seen.has(key)) { seen.add(key); sources.push({ source: c.source, page: c.page }); }
     }
+    const webSources = webResults.map((r) => ({ title: r.title, url: r.url }));
 
-    res.json({ answer, sources });
+    res.json({ answer, sources, webSources, mode });
   } catch (e) {
     console.error("Chat error:", e);
     res.status(500).json({ error: e.message || "Interner Fehler." });
@@ -255,30 +248,26 @@ app.get("/chat_stream", async (req, res) => {
   res.flushHeaders();
 
   try {
-    // 1. RAG retrieval
-    const chunks = await queryChromaDB(message, TOP_K);
-    const context = formatContext(chunks);
+    // 1. Build context (docs → web → none)
+    const { contextText, chunks, webResults, mode } = await buildContext(message);
 
-    // Send sources first
+    // Send sources first so the UI can show them while streaming
     const sources = [];
     const seen = new Set();
     for (const c of chunks) {
       const key = c.source + "::" + c.page;
-      if (!seen.has(key)) {
-        seen.add(key);
-        sources.push({ source: c.source, page: c.page });
-      }
+      if (!seen.has(key)) { seen.add(key); sources.push({ source: c.source, page: c.page }); }
     }
-    res.write("data: " + JSON.stringify({ type: "sources", sources }) + "\n\n");
+    const webSources = webResults.map((r) => ({ title: r.title, url: r.url }));
+    res.write("data: " + JSON.stringify({ type: "sources", sources, webSources, mode }) + "\n\n");
 
     // 2. Build messages
     const systemPrompt = await readSystemPrompt();
     const messages = [{ role: "system", content: systemPrompt }];
-    if (history && Array.isArray(history)) {
-      messages.push(...history.slice(-20));
-    }
-    const augmentedMessage =
-      `Kontext aus dem Bildungsplan:\n\n${context}\n\n---\n\nFrage der Lehrkraft: ${message}`;
+    if (history && Array.isArray(history)) messages.push(...history.slice(-20));
+    const augmentedMessage = contextText
+      ? `${contextText}\n\n---\n\nFrage der Lehrkraft: ${message}`
+      : message;
     messages.push({ role: "user", content: augmentedMessage });
 
     // 3. Stream from Mistral
