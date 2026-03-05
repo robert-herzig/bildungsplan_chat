@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bildungsplan GENT – Assistent</title>
+  <link rel="stylesheet" href="./static/style.css">
+</head>
+<body>
+  <div class="container">
+    <header class="hero">
+      <div class="hero-top">
+        <div class="hero-title">
+          <h1>🎓 Bildungsplan GENT Assistent</h1>
+          <p class="subtitle">Dein KI-gestützter Helfer für den Bildungsplan 2022 – Förderschwerpunkt Geistige Entwicklung</p>
+        </div>
+        <div class="hero-actions">
+          <button id="settingsBtn" class="icon-btn" aria-label="Einstellungen" title="System-Prompt anpassen">⚙</button>
+          <button id="clearBtn" class="icon-btn" aria-label="Chat leeren" title="Neuer Chat">🗑</button>
+        </div>
+      </div>
+      <div id="dbInfo" class="db-info"></div>
+    </header>
+
+    <main>
+      <div id="chatArea" class="chat-area">
+        <div id="welcomeMsg" class="welcome-msg">
+          <div class="welcome-icon">📚</div>
+          <h2>Willkommen!</h2>
+          <p>Stelle eine Frage zum Bildungsplan GENT 2022 und ich suche die relevanten Informationen für dich.</p>
+          <div class="example-questions">
+            <p class="example-label">Beispiel-Fragen:</p>
+            <button class="example-btn" data-q="Welche Kompetenzbereiche gibt es im Bildungsbereich Arbeit?">Kompetenzbereiche im Bildungsbereich Arbeit?</button>
+            <button class="example-btn" data-q="Was sagt der Bildungsplan zum Thema Selbstständiges Leben?">Selbstständiges Leben im Bildungsplan?</button>
+            <button class="example-btn" data-q="Wie ist der Bildungsplan GENT strukturiert und aufgebaut?">Aufbau und Struktur des Bildungsplans?</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="input-area">
+        <div class="input-row">
+          <textarea id="userInput" rows="2" placeholder="Stelle eine Frage zum Bildungsplan …" autofocus></textarea>
+          <button id="sendBtn" class="primary send-btn" title="Senden">➤</button>
+        </div>
+        <div class="input-footer">
+          <label class="checkbox">
+            <input type="checkbox" id="streaming" checked>
+            <span>Streaming</span>
+          </label>
+          <small class="muted">Basierend auf deinen Bildungsplan-Dokumenten</small>
+        </div>
+      </div>
+    </main>
+
+    <footer>
+      <small>Bereitgestellt von eulenai.de</small>
+    </footer>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="promptModal" class="modal" style="display:none;">
+    <div class="modal-content">
+      <h3>System‑Prompt anpassen</h3>
+      <p class="muted">Hier kannst du die Anweisungen ändern, die der Assistent im Hintergrund erhält.</p>
+      <textarea id="promptEditor" rows="14"></textarea>
+      <div class="modal-actions">
+        <button id="savePromptBtn" class="primary">Speichern</button>
+        <button id="cancelPromptBtn" class="secondary">Abbrechen</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ── Base path detection (works behind reverse proxy) ──
+    const BASE_PATH = (() => {
+      const p = window.location.pathname;
+      if (p.startsWith('/bildungsplan')) return '/bildungsplan';
+      return '';
+    })();
+
+    // ── DOM refs ──
+    const chatArea = document.getElementById('chatArea');
+    const welcomeMsg = document.getElementById('welcomeMsg');
+    const userInput = document.getElementById('userInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const streamingChk = document.getElementById('streaming');
+    const settingsBtn = document.getElementById('settingsBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const promptModal = document.getElementById('promptModal');
+    const promptEditor = document.getElementById('promptEditor');
+    const dbInfo = document.getElementById('dbInfo');
+
+    let chatHistory = []; // {role, content} pairs for Mistral context
+    let isGenerating = false;
+
+    // ── DB info ──
+    (async () => {
+      try {
+        const r = await fetch(BASE_PATH + '/db_info');
+        const data = await r.json();
+        if (data.count > 0) {
+          dbInfo.innerHTML = `📊 <strong>${data.count}</strong> Textabschnitte aus <strong>${data.sources ? data.sources.length : '?'}</strong> Dokument(en) indexiert`;
+        } else {
+          dbInfo.innerHTML = '⚠️ Keine Dokumente indexiert – bitte zuerst <code>python3 ingest.py</code> ausführen';
+          dbInfo.classList.add('warning');
+        }
+      } catch {
+        dbInfo.innerHTML = '⚠️ Datenbank nicht erreichbar';
+        dbInfo.classList.add('warning');
+      }
+    })();
+
+    // ── Example questions ──
+    document.querySelectorAll('.example-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        userInput.value = btn.dataset.q;
+        sendMessage();
+      });
+    });
+
+    // ── Send message ──
+    sendBtn.onclick = () => sendMessage();
+    userInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage();
+      }
+    });
+
+    async function sendMessage() {
+      const text = userInput.value.trim();
+      if (!text || isGenerating) return;
+
+      welcomeMsg.style.display = 'none';
+      isGenerating = true;
+      sendBtn.disabled = true;
+      userInput.value = '';
+
+      // Add user bubble
+      appendBubble('user', text);
+
+      // Add assistant bubble (will be filled)
+      const assistantBubble = appendBubble('assistant', '');
+      const contentDiv = assistantBubble.querySelector('.bubble-content');
+      const sourcesDiv = assistantBubble.querySelector('.bubble-sources');
+      contentDiv.innerHTML = '<span class="typing">Suche relevante Informationen …</span>';
+
+      try {
+        if (streamingChk.checked) {
+          await streamChat(text, contentDiv, sourcesDiv);
+        } else {
+          await plainChat(text, contentDiv, sourcesDiv);
+        }
+      } catch (e) {
+        contentDiv.innerHTML = '<span class="error-text">Fehler: ' + escapeHtml(e.message) + '</span>';
+      }
+
+      isGenerating = false;
+      sendBtn.disabled = false;
+      userInput.focus();
+    }
+
+    async function plainChat(text, contentDiv, sourcesDiv) {
+      const r = await fetch(BASE_PATH + '/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text, history: chatHistory }),
+      });
+      const data = await r.json();
+      if (!r.ok || data.error) {
+        contentDiv.innerHTML = '<span class="error-text">' + escapeHtml(data.error || 'Fehler') + '</span>';
+        return;
+      }
+      contentDiv.innerHTML = formatMarkdown(data.answer);
+      chatHistory.push({ role: 'user', content: text });
+      chatHistory.push({ role: 'assistant', content: data.answer });
+      renderSources(sourcesDiv, data.sources);
+      scrollToBottom();
+    }
+
+    async function streamChat(text, contentDiv, sourcesDiv) {
+      const historyParam = encodeURIComponent(JSON.stringify(chatHistory));
+      const qs = `message=${encodeURIComponent(text)}&history=${historyParam}`;
+      const r = await fetch(BASE_PATH + '/chat_stream?' + qs);
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let fullText = '';
+      let sourcesRendered = false;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split('\n\n');
+        buffer = events.pop() || '';
+
+        for (const ev of events) {
+          const m = ev.match(/^data:\s*(.*)$/s);
+          if (!m) continue;
+          const payload = m[1];
+
+          if (payload === '[DONE]') {
+            contentDiv.innerHTML = formatMarkdown(fullText);
+            chatHistory.push({ role: 'user', content: text });
+            chatHistory.push({ role: 'assistant', content: fullText });
+            scrollToBottom();
+            return;
+          }
+
+          if (payload.startsWith('ERROR:')) {
+            contentDiv.innerHTML = '<span class="error-text">' + escapeHtml(payload) + '</span>';
+            return;
+          }
+
+          try {
+            const obj = JSON.parse(payload);
+            // Sources message
+            if (obj.type === 'sources') {
+              renderSources(sourcesDiv, obj.sources);
+              sourcesRendered = true;
+              continue;
+            }
+            // Text content
+            fullText = obj;
+          } catch {
+            fullText = payload;
+          }
+
+          contentDiv.innerHTML = formatMarkdown(fullText) + '<span class="cursor">▊</span>';
+          scrollToBottom();
+        }
+      }
+    }
+
+    // ── UI helpers ──
+    function appendBubble(role, text) {
+      const bubble = document.createElement('div');
+      bubble.className = 'chat-bubble ' + role;
+      bubble.innerHTML = `
+        <div class="bubble-role">${role === 'user' ? '👤 Du' : '🎓 Assistent'}</div>
+        <div class="bubble-content">${role === 'user' ? escapeHtml(text) : text}</div>
+        <div class="bubble-sources"></div>
+      `;
+      chatArea.appendChild(bubble);
+      scrollToBottom();
+      return bubble;
+    }
+
+    function renderSources(container, sources) {
+      if (!sources || sources.length === 0) return;
+      let html = '<div class="sources-label">📎 Quellen:</div><div class="sources-list">';
+      for (const s of sources) {
+        html += `<span class="source-tag">${escapeHtml(s.source)} – S. ${s.page}</span>`;
+      }
+      html += '</div>';
+      container.innerHTML = html;
+    }
+
+    function scrollToBottom() {
+      chatArea.scrollTop = chatArea.scrollHeight;
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    function formatMarkdown(text) {
+      if (!text) return '';
+      // Basic markdown: bold, italic, code, line breaks
+      return text
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\*(.+?)\*/g, '<em>$1</em>')
+        .replace(/`(.+?)`/g, '<code>$1</code>')
+        .replace(/\n/g, '<br>');
+    }
+
+    // ── Clear chat ──
+    clearBtn.onclick = () => {
+      chatHistory = [];
+      chatArea.innerHTML = '';
+      chatArea.appendChild(welcomeMsg);
+      welcomeMsg.style.display = '';
+    };
+
+    // ── Settings modal ──
+    settingsBtn.onclick = async () => {
+      promptModal.style.display = 'flex';
+      try {
+        const r = await fetch(BASE_PATH + '/system_prompt');
+        const data = await r.json();
+        promptEditor.value = data.prompt || '';
+      } catch {
+        promptEditor.value = '';
+      }
+    };
+
+    document.getElementById('cancelPromptBtn').onclick = () => {
+      promptModal.style.display = 'none';
+    };
+
+    document.getElementById('savePromptBtn').onclick = async () => {
+      const r = await fetch(BASE_PATH + '/system_prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: promptEditor.value }),
+      });
+      if (r.ok) {
+        promptModal.style.display = 'none';
+      } else {
+        alert('Fehler beim Speichern.');
+      }
+    };
+
+    // Close modal on backdrop click
+    promptModal.addEventListener('click', (e) => {
+      if (e.target === promptModal) promptModal.style.display = 'none';
+    });
+  </script>
+</body>
+</html>
