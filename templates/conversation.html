@@ -307,21 +307,20 @@ async function startParentGreeting() {
       sseBuffer = lines.pop() || '';
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue;
-        try {
-          const event = JSON.parse(line.slice(6));
-          if (event.type === 'sentence') {
-            if (!greetBubble) greetBubble = addTranscriptBubble('parent', event.sentence);
-            else appendBubbleText(greetBubble, ' ' + event.sentence);
-            fullGreeting += (fullGreeting ? ' ' : '') + event.sentence;
-            if (document.getElementById('autoTTS').checked) {
-              setStatus('🔊 Spricht...');
-              await playTTS(event.sentence, currentPreset.voice);
-            }
-            if (isRecording || streamAbortController?.signal.aborted) { done = true; break; }
-          } else if (event.type === 'done' && event.full) {
-            fullGreeting = event.full;
+        let event;
+        try { event = JSON.parse(line.slice(6)); } catch { continue; } // skip malformed SSE lines
+        if (event.type === 'sentence') {
+          if (!greetBubble) greetBubble = addTranscriptBubble('parent', event.sentence);
+          else appendBubbleText(greetBubble, ' ' + event.sentence);
+          fullGreeting += (fullGreeting ? ' ' : '') + event.sentence;
+          if (document.getElementById('autoTTS').checked) {
+            setStatus('🔊 Spricht...');
+            await playTTS(event.sentence, currentPreset.voice);
           }
-        } catch {}
+          if (isRecording || streamAbortController?.signal.aborted) { done = true; break; }
+        } else if (event.type === 'done' && event.full) {
+          fullGreeting = event.full;
+        }
       }
     }
 
@@ -527,24 +526,21 @@ async function getParentResponse(userText) {
       sseBuffer = lines.pop() || '';
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue;
-        try {
-          const event = JSON.parse(line.slice(6));
-          if (event.type === 'sentence') {
-            if (!parentBubble) parentBubble = addTranscriptBubble('parent', event.sentence);
-            else appendBubbleText(parentBubble, ' ' + event.sentence);
-            fullResponse += (fullResponse ? ' ' : '') + event.sentence;
-            if (document.getElementById('autoTTS').checked) {
-              setStatus('🔊 Spricht...');
-              await playTTS(event.sentence, currentPreset.voice);
-            }
-            if (isRecording || streamAbortController?.signal.aborted) { done = true; break; }
-          } else if (event.type === 'done' && event.full) {
-            fullResponse = event.full;
-          } else if (event.type === 'error') {
-            throw new Error(event.error);
+        let event;
+        try { event = JSON.parse(line.slice(6)); } catch { continue; } // skip malformed SSE lines
+        if (event.type === 'sentence') {
+          if (!parentBubble) parentBubble = addTranscriptBubble('parent', event.sentence);
+          else appendBubbleText(parentBubble, ' ' + event.sentence);
+          fullResponse += (fullResponse ? ' ' : '') + event.sentence;
+          if (document.getElementById('autoTTS').checked) {
+            setStatus('🔊 Spricht...');
+            await playTTS(event.sentence, currentPreset.voice);
           }
-        } catch (e) {
-          if (e.message && !e.message.startsWith('JSON') && !e.message.startsWith('Unexpected')) throw e;
+          if (isRecording || streamAbortController?.signal.aborted) { done = true; break; }
+        } else if (event.type === 'done' && event.full) {
+          fullResponse = event.full;
+        } else if (event.type === 'error') {
+          throw new Error(event.error);
         }
       }
     }
@@ -564,27 +560,23 @@ async function getParentResponse(userText) {
 
 // ── TTS ───────────────────────────────────────────────────────
 async function playTTS(text, voice) {
-  return new Promise(async (resolve) => {
-    try {
-      const resp = await fetch(BASE + '/conversation/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voice })
-      });
-      if (!resp.ok) {
-        console.warn('TTS response not ok:', resp.status);
-        resolve(); return;
-      }
+  try {
+    const resp = await fetch(BASE + '/conversation/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text, voice })
+    });
+    if (!resp.ok) { console.warn('TTS HTTP error:', resp.status); return; }
 
-      const audioBlob = await resp.blob();
-      if (audioBlob.size < 100) { resolve(); return; }
+    const audioBlob = await resp.blob();
+    if (audioBlob.size < 100) { console.warn('TTS blob too small'); return; }
+    if (isRecording) return; // user already speaking
 
-      // If user already started recording (interrupt), skip playback
-      if (isRecording) { resolve(); return; }
-
+    // Wrap audio playback lifecycle in a plain Promise
+    await new Promise((resolve) => {
+      ttsResolve = resolve;
       const url = URL.createObjectURL(audioBlob);
       currentAudio = new Audio(url);
-      ttsResolve = resolve;
       document.getElementById('stopAudioBtn').classList.remove('hidden');
 
       const cleanup = () => {
@@ -592,29 +584,24 @@ async function playTTS(text, voice) {
         document.getElementById('stopAudioBtn').classList.add('hidden');
         URL.revokeObjectURL(url);
         currentAudio = null;
-        if (ttsResolve) { ttsResolve(); ttsResolve = null; }
+        if (ttsResolve) { const r = ttsResolve; ttsResolve = null; r(); }
       };
 
       currentAudio.onended = cleanup;
-      currentAudio.onerror = (err) => {
-        console.warn('Audio playback error:', err);
-        cleanup();
-      };
+      currentAudio.onerror = () => cleanup();
 
-      try {
-        await currentAudio.play();
-        // Listen for voice interrupt while TTS is playing
-        startMicMonitoringForInterrupt();
-      } catch (playErr) {
-        console.warn('Audio play() blocked by browser:', playErr.name, playErr.message);
-        cleanup();
-      }
-    } catch (e) {
-      console.warn('TTS error:', e);
-      if (ttsResolve) { ttsResolve(); ttsResolve = null; }
-      else resolve();
-    }
-  });
+      currentAudio.play()
+        .then(() => { if (currentAudio) startMicMonitoringForInterrupt(); })
+        .catch((playErr) => {
+          console.warn('play() blocked:', playErr.name, playErr.message);
+          cleanup();
+        });
+    });
+  } catch (e) {
+    console.warn('TTS error:', e);
+    // Ensure we never leave a dangling ttsResolve
+    if (ttsResolve) { const r = ttsResolve; ttsResolve = null; r(); }
+  }
 }
 
 function stopAudio() {
@@ -782,6 +769,9 @@ async function startMicMonitoringForInterrupt() {
     await new Promise(r => setTimeout(r, 300));
     // Check again after delay – audio might have ended
     if (!currentAudio) { stopMicMonitoring(); return; }
+    let consecutiveFrames = 0;
+    const REQUIRED_FRAMES = 4;    // ~4 rAF frames ≈ 65ms of sustained speech
+    const RMS_THRESHOLD = 0.12;   // raised from 0.05 to avoid ambient noise false positives
     function tick() {
       if (!currentAudio) {
         // TTS ended normally – clean up monitor resources
@@ -791,14 +781,19 @@ async function startMicMonitoringForInterrupt() {
       analyser.getFloatTimeDomainData(buf);
       let sum = 0;
       for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
-      if (Math.sqrt(sum / buf.length) > 0.05) {
-        // User started speaking – interrupt!
-        stopMicMonitoring();
-        if (streamAbortController) streamAbortController.abort();
-        stopAudio();          // resolves pending TTS promise
-        setBusy(false);
-        if (!isRecording && !recordingPending) startRecording();
-        return;
+      if (Math.sqrt(sum / buf.length) > RMS_THRESHOLD) {
+        consecutiveFrames++;
+        if (consecutiveFrames >= REQUIRED_FRAMES) {
+          // Sustained speech detected – interrupt!
+          stopMicMonitoring();
+          if (streamAbortController) streamAbortController.abort();
+          stopAudio();          // resolves pending TTS promise
+          setBusy(false);
+          if (!isRecording && !recordingPending) startRecording();
+          return;
+        }
+      } else {
+        consecutiveFrames = 0; // reset if signal drops
       }
       micMonitorAnimFrame = requestAnimationFrame(tick);
     }
