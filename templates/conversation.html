@@ -142,11 +142,13 @@ let conversationHistory = [];
 let isRecording = false;
 let mediaRecorder = null;
 let audioChunks = [];
-let currentAudio = null;
 let busy = false;
 
-// TTS interrupt support
-let ttsResolve = null;
+// TTS playback via Web Audio API (bypasses Brave/desktop autoplay policy)
+let playbackCtx = null;      // shared AudioContext for TTS
+let currentSource = null;    // AudioBufferSourceNode currently playing
+let ttsPlaying = false;      // true while TTS audio is playing
+let ttsResolve = null;       // resolves the per-sentence playback promise
 
 // VAD (Voice Activity Detection) – auto-stop recording on silence
 let vadAudioCtx = null;
@@ -171,11 +173,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadPresets();
   setupEventListeners();
 
-  // Unlock audio on first user interaction (Brave / strict autoplay browsers)
+  // Unlock audio on first user interaction (required for Web Audio API on Brave/desktop)
   const unlockAudio = () => {
-    const a = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==');
-    a.volume = 0;
-    a.play().then(() => a.pause()).catch(() => {});
+    if (!playbackCtx) playbackCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (playbackCtx.state === 'suspended') playbackCtx.resume();
     document.removeEventListener('click', unlockAudio, true);
     document.removeEventListener('keydown', unlockAudio, true);
   };
@@ -340,7 +341,7 @@ async function startParentGreeting() {
 // ── Recording ─────────────────────────────────────────────────
 async function toggleRecording() {
   // Interrupt: if TTS is playing, abort stream + stop audio
-  if (currentAudio) {
+  if (ttsPlaying) {
     if (streamAbortController) streamAbortController.abort();
     stopAudio();
     busy = false;
@@ -570,47 +571,52 @@ async function playTTS(text, voice) {
 
     const audioBlob = await resp.blob();
     if (audioBlob.size < 100) { console.warn('TTS blob too small'); return; }
-    if (isRecording) return; // user already speaking
+    if (isRecording) return;
 
-    // Wrap audio playback lifecycle in a plain Promise
+    // Ensure AudioContext exists and is running
+    if (!playbackCtx) playbackCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (playbackCtx.state === 'suspended') await playbackCtx.resume();
+
+    const arrayBuffer = await audioBlob.arrayBuffer();
+    const audioBuffer = await playbackCtx.decodeAudioData(arrayBuffer);
+
+    if (isRecording) return; // user may have started speaking during decode
+
     await new Promise((resolve) => {
       ttsResolve = resolve;
-      const url = URL.createObjectURL(audioBlob);
-      currentAudio = new Audio(url);
+      ttsPlaying = true;
+      currentSource = playbackCtx.createBufferSource();
+      currentSource.buffer = audioBuffer;
+      currentSource.connect(playbackCtx.destination);
       document.getElementById('stopAudioBtn').classList.remove('hidden');
 
       const cleanup = () => {
         stopMicMonitoring();
+        ttsPlaying = false;
+        currentSource = null;
         document.getElementById('stopAudioBtn').classList.add('hidden');
-        URL.revokeObjectURL(url);
-        currentAudio = null;
         if (ttsResolve) { const r = ttsResolve; ttsResolve = null; r(); }
       };
 
-      currentAudio.onended = cleanup;
-      currentAudio.onerror = () => cleanup();
-
-      currentAudio.play()
-        .then(() => { if (currentAudio) startMicMonitoringForInterrupt(); })
-        .catch((playErr) => {
-          console.warn('play() blocked:', playErr.name, playErr.message);
-          cleanup();
-        });
+      currentSource.onended = cleanup;
+      currentSource.start(0);
+      startMicMonitoringForInterrupt();
     });
   } catch (e) {
     console.warn('TTS error:', e);
-    // Ensure we never leave a dangling ttsResolve
+    ttsPlaying = false;
+    currentSource = null;
     if (ttsResolve) { const r = ttsResolve; ttsResolve = null; r(); }
   }
 }
 
 function stopAudio() {
   stopMicMonitoring();
-  if (currentAudio) {
-    currentAudio.pause();
-    currentAudio.currentTime = 0;
-    currentAudio = null;
+  if (currentSource) {
+    try { currentSource.stop(); } catch {}
+    currentSource = null;
   }
+  ttsPlaying = false;
   document.getElementById('stopAudioBtn').classList.add('hidden');
   // Resolve any pending TTS promise (so getParentResponse continues)
   if (ttsResolve) { ttsResolve(); ttsResolve = null; }
@@ -754,7 +760,7 @@ async function startMicMonitoringForInterrupt() {
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false }
     });
     // If audio already finished during getUserMedia, clean up immediately
-    if (!currentAudio) {
+    if (!ttsPlaying) {
       stream.getTracks().forEach(t => t.stop());
       return;
     }
@@ -768,7 +774,7 @@ async function startMicMonitoringForInterrupt() {
     // Wait briefly so TTS audio startup doesn't self-trigger
     await new Promise(r => setTimeout(r, 400));
     // Check again after delay – audio might have ended
-    if (!currentAudio) { stopMicMonitoring(); return; }
+    if (!ttsPlaying) { stopMicMonitoring(); return; }
     let consecutiveFrames = 0;
     const REQUIRED_FRAMES = 2;
     // Dynamic threshold: measure echo/ambient for 200ms, then set threshold at 3.5× baseline
@@ -776,7 +782,7 @@ async function startMicMonitoringForInterrupt() {
     const baselineStart = Date.now();
     let dynamicThreshold = null;  // null = still in baseline phase
     function tick() {
-      if (!currentAudio) { stopMicMonitoring(); return; }
+      if (!ttsPlaying) { stopMicMonitoring(); return; }
       analyser.getFloatTimeDomainData(buf);
       let sum = 0;
       for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
