@@ -144,10 +144,10 @@ let mediaRecorder = null;
 let audioChunks = [];
 let busy = false;
 
-// TTS playback: AudioBufferSourceNode through unlocked AudioContext
-// → bypasses Brave/desktop autoplay policy (HTMLAudioElement.play() gets blocked async)
-let playbackCtx = null;      // shared AudioContext, unlocked on first user gesture
-let currentSource = null;    // AudioBufferSourceNode currently playing
+// TTS playback via HTMLAudioElement – works on mobile Safari, Chrome, Firefox, Edge
+// AudioContext is kept only for iOS Safari audio-session unlock
+let playbackCtx = null;      // AudioContext used only to unlock audio session on iOS
+let currentAudioEl = null;   // HTMLAudioElement currently playing TTS
 let ttsPlaying = false;      // true while TTS audio is playing
 let ttsResolve = null;       // resolves the per-sentence playback promise
 
@@ -280,6 +280,7 @@ async function startParentGreeting() {
   setBusy(true);
   setStatus('🤔 Elternteil begrüßt dich...');
   streamAbortController = new AbortController();
+  const signal = streamAbortController.signal;
   let greetBubble = null;
   let fullGreeting = '';
 
@@ -292,39 +293,65 @@ async function startParentGreeting() {
         history: [],
         preset: currentPreset
       }),
-      signal: streamAbortController.signal
+      signal
     });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
 
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let sseBuffer = '';
-    let done = false;
+    // TTS pre-fetch queue: SSE reader and TTS player run concurrently.
+    // Each sentence's TTS fetch starts immediately when the sentence arrives from SSE,
+    // so by the time the previous sentence finishes playing, the next blob is ready → no gap.
+    const ttsQueue = [];  // Promise<Blob|null>[] filled by producer
+    let sseDone = false;
 
-    while (!done) {
-      const { value, done: streamDone } = await reader.read();
-      if (streamDone) break;
-      sseBuffer += decoder.decode(value, { stream: true });
-      const lines = sseBuffer.split('\n');
-      sseBuffer = lines.pop() || '';
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        let event;
-        try { event = JSON.parse(line.slice(6)); } catch { continue; } // skip malformed SSE lines
-        if (event.type === 'sentence') {
-          if (!greetBubble) greetBubble = addTranscriptBubble('parent', event.sentence);
-          else appendBubbleText(greetBubble, ' ' + event.sentence);
-          fullGreeting += (fullGreeting ? ' ' : '') + event.sentence;
-          if (document.getElementById('autoTTS').checked) {
-            setStatus('🔊 Spricht...');
-            await playTTS(event.sentence, currentPreset.voice);
+    await Promise.all([
+      // PRODUCER: reads SSE, fires TTS fetches the moment each sentence arrives
+      (async () => {
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        try {
+          while (!signal.aborted) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            const lines = buf.split('\n');
+            buf = lines.pop() || '';
+            for (const line of lines) {
+              if (!line.startsWith('data: ')) continue;
+              let ev; try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+              if (ev.type === 'sentence') {
+                if (!greetBubble) greetBubble = addTranscriptBubble('parent', ev.sentence);
+                else appendBubbleText(greetBubble, ' ' + ev.sentence);
+                fullGreeting += (fullGreeting ? ' ' : '') + ev.sentence;
+                if (document.getElementById('autoTTS').checked)
+                  ttsQueue.push(prefetchTTSBlob(ev.sentence, currentPreset.voice));
+              } else if (ev.type === 'done' && ev.full) {
+                fullGreeting = ev.full;
+              }
+            }
           }
-          if (isRecording || streamAbortController?.signal.aborted) { done = true; break; }
-        } else if (event.type === 'done' && event.full) {
-          fullGreeting = event.full;
+        } catch (e) { if (e.name !== 'AbortError') throw e; }
+        finally { sseDone = true; }
+      })(),
+
+      // CONSUMER: plays blobs in order; by the time we reach each, fetch is likely done → no gap
+      (async () => {
+        let idx = 0;
+        while (true) {
+          if (idx < ttsQueue.length) {
+            const blob = await ttsQueue[idx++];
+            if (blob && !signal.aborted && !isRecording) {
+              setStatus('🔊 Spricht...');
+              await playAudioBlob(blob);
+            }
+            if (signal.aborted || isRecording) break;
+          } else {
+            if (sseDone) break;
+            await new Promise(r => setTimeout(r, 15));
+          }
         }
-      }
-    }
+      })()
+    ]);
 
     if (fullGreeting.trim()) conversationHistory.push({ role: 'assistant', content: fullGreeting.trim() });
     if (!isRecording) setStatus('🎙️ Du bist dran – sprich oder tippe');
@@ -499,6 +526,7 @@ async function sendTextMessage() {
 async function getParentResponse(userText) {
   setStatus('🤔 Elternteil überlegt...');
   streamAbortController = new AbortController();
+  const signal = streamAbortController.signal;
   let parentBubble = null;
   let fullResponse = '';
 
@@ -511,41 +539,64 @@ async function getParentResponse(userText) {
         history: conversationHistory.slice(-20),
         preset: currentPreset
       }),
-      signal: streamAbortController.signal
+      signal
     });
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
 
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let sseBuffer = '';
-    let done = false;
+    const ttsQueue = [];  // Promise<Blob|null>[] filled by producer
+    let sseDone = false;
 
-    while (!done) {
-      const { value, done: streamDone } = await reader.read();
-      if (streamDone) break;
-      sseBuffer += decoder.decode(value, { stream: true });
-      const lines = sseBuffer.split('\n');
-      sseBuffer = lines.pop() || '';
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        let event;
-        try { event = JSON.parse(line.slice(6)); } catch { continue; } // skip malformed SSE lines
-        if (event.type === 'sentence') {
-          if (!parentBubble) parentBubble = addTranscriptBubble('parent', event.sentence);
-          else appendBubbleText(parentBubble, ' ' + event.sentence);
-          fullResponse += (fullResponse ? ' ' : '') + event.sentence;
-          if (document.getElementById('autoTTS').checked) {
-            setStatus('🔊 Spricht...');
-            await playTTS(event.sentence, currentPreset.voice);
+    await Promise.all([
+      // PRODUCER: reads SSE, fires TTS fetches the moment each sentence arrives
+      (async () => {
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        try {
+          while (!signal.aborted) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            const lines = buf.split('\n');
+            buf = lines.pop() || '';
+            for (const line of lines) {
+              if (!line.startsWith('data: ')) continue;
+              let ev; try { ev = JSON.parse(line.slice(6)); } catch { continue; }
+              if (ev.type === 'sentence') {
+                if (!parentBubble) parentBubble = addTranscriptBubble('parent', ev.sentence);
+                else appendBubbleText(parentBubble, ' ' + ev.sentence);
+                fullResponse += (fullResponse ? ' ' : '') + ev.sentence;
+                if (document.getElementById('autoTTS').checked)
+                  ttsQueue.push(prefetchTTSBlob(ev.sentence, currentPreset.voice));
+              } else if (ev.type === 'done' && ev.full) {
+                fullResponse = ev.full;
+              } else if (ev.type === 'error') {
+                throw new Error(ev.error);
+              }
+            }
           }
-          if (isRecording || streamAbortController?.signal.aborted) { done = true; break; }
-        } else if (event.type === 'done' && event.full) {
-          fullResponse = event.full;
-        } else if (event.type === 'error') {
-          throw new Error(event.error);
+        } catch (e) { if (e.name !== 'AbortError') throw e; }
+        finally { sseDone = true; }
+      })(),
+
+      // CONSUMER: plays blobs in order; by the time we reach each, fetch is likely done → no gap
+      (async () => {
+        let idx = 0;
+        while (true) {
+          if (idx < ttsQueue.length) {
+            const blob = await ttsQueue[idx++];
+            if (blob && !signal.aborted && !isRecording) {
+              setStatus('🔊 Spricht...');
+              await playAudioBlob(blob);
+            }
+            if (signal.aborted || isRecording) break;
+          } else {
+            if (sseDone) break;
+            await new Promise(r => setTimeout(r, 15));
+          }
         }
-      }
-    }
+      })()
+    ]);
 
     if (fullResponse.trim()) conversationHistory.push({ role: 'assistant', content: fullResponse.trim() });
     if (!isRecording) setStatus('🎙️ Du bist dran – sprich oder tippe');
@@ -561,66 +612,54 @@ async function getParentResponse(userText) {
 }
 
 // ── TTS ───────────────────────────────────────────────────────
-async function playTTS(text, voice) {
-  try {
-    const resp = await fetch(BASE + '/conversation/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text, voice })
-    });
-    if (!resp.ok) { console.warn('TTS HTTP error:', resp.status); return; }
+// Fire a TTS fetch immediately; returns Promise<Blob|null> (runs in parallel with playback)
+function prefetchTTSBlob(text, voice) {
+  return fetch(BASE + '/conversation/tts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, voice })
+  }).then(r => r.ok ? r.blob() : null)
+    .catch(e => { console.warn('TTS prefetch error:', e); return null; });
+}
 
-    // Fetch as arrayBuffer directly (no blob intermediate)
-    const arrayBuffer = await resp.arrayBuffer();
-    if (arrayBuffer.byteLength < 100) { console.warn('TTS data too small'); return; }
-    if (isRecording) return;
+// Play a pre-fetched TTS blob; resolves when playback ends or is interrupted
+async function playAudioBlob(blob) {
+  if (!blob || blob.size < 100) return;
+  const blobUrl = URL.createObjectURL(blob);
+  const audio = new Audio(blobUrl);
+  await new Promise((resolve) => {
+    ttsResolve = resolve;
+    ttsPlaying = true;
+    currentAudioEl = audio;
+    document.getElementById('stopAudioBtn').classList.remove('hidden');
 
-    // Ensure AudioContext is unlocked (created + resumed on first user gesture)
-    if (!playbackCtx) playbackCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if (playbackCtx.state === 'suspended') await playbackCtx.resume();
+    const cleanup = () => {
+      stopMicMonitoring();
+      ttsPlaying = false;
+      currentAudioEl = null;
+      URL.revokeObjectURL(blobUrl);
+      document.getElementById('stopAudioBtn').classList.add('hidden');
+      if (ttsResolve) { const r = ttsResolve; ttsResolve = null; r(); }
+    };
 
-    const audioBuffer = await playbackCtx.decodeAudioData(arrayBuffer);
-
-    if (isRecording) return; // user may have started speaking during decode
-
-    await new Promise((resolve) => {
-      ttsResolve = resolve;
-      ttsPlaying = true;
-      currentSource = playbackCtx.createBufferSource();
-      currentSource.buffer = audioBuffer;
-      currentSource.connect(playbackCtx.destination);
-      document.getElementById('stopAudioBtn').classList.remove('hidden');
-
-      const cleanup = () => {
-        stopMicMonitoring();
-        ttsPlaying = false;
-        currentSource = null;
-        document.getElementById('stopAudioBtn').classList.add('hidden');
-        if (ttsResolve) { const r = ttsResolve; ttsResolve = null; r(); }
-      };
-
-      currentSource.onended = cleanup;
-      currentSource.start(0);
-      // Delay mic monitor slightly so creating a new AudioContext doesn't glitch audio start
-      setTimeout(() => { if (ttsPlaying) startMicMonitoringForInterrupt(); }, 150);
-    });
-  } catch (e) {
-    console.warn('TTS error:', e);
-    ttsPlaying = false;
-    currentSource = null;
-    if (ttsResolve) { const r = ttsResolve; ttsResolve = null; r(); }
-  }
+    audio.addEventListener('ended', cleanup, { once: true });
+    audio.addEventListener('error', cleanup, { once: true });
+    audio.play().catch(e => { console.warn('audio.play() failed:', e); cleanup(); });
+    // Brief delay before starting mic monitor so its AudioContext creation doesn't glitch audio
+    setTimeout(() => { if (ttsPlaying) startMicMonitoringForInterrupt(); }, 150);
+  });
 }
 
 function stopAudio() {
   stopMicMonitoring();
-  if (currentSource) {
-    try { currentSource.stop(); } catch {}
-    currentSource = null;
+  if (currentAudioEl) {
+    try { currentAudioEl.pause(); currentAudioEl.src = ''; } catch {}
+    currentAudioEl = null;
   }
   ttsPlaying = false;
   document.getElementById('stopAudioBtn').classList.add('hidden');
-  // Resolve any pending TTS promise (so getParentResponse continues)
+  // Abort SSE stream so the TTS queue consumer loop exits cleanly
+  if (streamAbortController) streamAbortController.abort();
   if (ttsResolve) { ttsResolve(); ttsResolve = null; }
 }
 
