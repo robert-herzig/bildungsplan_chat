@@ -25,6 +25,10 @@ cp "$SOURCE_DIR/query_helper.py" "$DEPLOY_DIR/"
 cp "$SOURCE_DIR/ingest.py" "$DEPLOY_DIR/"
 cp "$SOURCE_DIR/system_prompt.txt" "$DEPLOY_DIR/"
 cp "$SOURCE_DIR/ecosystem.config.js" "$DEPLOY_DIR/"
+cp "$SOURCE_DIR/tts_server.py" "$DEPLOY_DIR/"
+cp "$SOURCE_DIR/tts_helper.py" "$DEPLOY_DIR/"
+cp "$SOURCE_DIR/stt_helper.py" "$DEPLOY_DIR/"
+cp "$SOURCE_DIR/conversation_presets.json" "$DEPLOY_DIR/"
 cp -r "$SOURCE_DIR/templates" "$DEPLOY_DIR/"
 cp -r "$SOURCE_DIR/static" "$DEPLOY_DIR/"
 
@@ -65,12 +69,18 @@ pip3 install --user pymupdf chromadb python-dotenv 2>/dev/null || {
 
 # 5. PM2 starten/neustarten
 echo ""
-echo "🚀 Starte/Neustarte PM2-Prozess..."
+echo "✨ Starte/Neustarte PM2-Prozesse..."
 pm2 describe "$APP_NAME" > /dev/null 2>&1 && {
     pm2 restart "$APP_NAME"
 } || {
     cd "$DEPLOY_DIR"
-    pm2 start ecosystem.config.js
+    pm2 start ecosystem.config.js --only "$APP_NAME"
+}
+pm2 describe "piper_tts" > /dev/null 2>&1 && {
+    pm2 restart "piper_tts"
+} || {
+    cd "$DEPLOY_DIR"
+    pm2 start ecosystem.config.js --only "piper_tts"
 }
 pm2 save
 
