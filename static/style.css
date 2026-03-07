@@ -438,3 +438,80 @@ footer {
         padding: 6px 12px;
     }
 }
+
+/* ── Per-response TTS play button ──────────────────────────── */
+.bubble-actions {
+    margin-top: 6px;
+    padding-top: 4px;
+    border-top: 1px solid rgba(255,255,255,0.1);
+}
+.tts-play-btn {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #ccc;
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.82rem;
+    transition: background 0.2s, color 0.2s;
+}
+.tts-play-btn:hover {
+    background: rgba(255,255,255,0.15);
+    color: #fff;
+}
+
+/* ── Mermaid flowchart ─────────────────────────────────────── */
+.mermaid-container {
+    margin: 12px 0;
+    padding: 12px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.1);
+    text-align: center;
+}
+.mermaid-chart svg {
+    max-width: 100%;
+    height: auto;
+}
+.mermaid-export-btn {
+    margin-top: 8px;
+    display: inline-block;
+}
+
+/* ── Memories modal ────────────────────────────────────────── */
+.memories-list {
+    max-height: 300px;
+    overflow-y: auto;
+    margin-bottom: 12px;
+}
+.memory-item {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 6px;
+}
+.memory-input {
+    flex: 1;
+    background: #0b1224;
+    border: 1px solid #334155;
+    color: var(--text);
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+}
+.memory-input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+.memory-add-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+.danger {
+    color: #f87171 !important;
+    border-color: #f8717140 !important;
+}
+.danger:hover {
+    background: #7f1d1d !important;
+}

@@ -29,8 +29,20 @@ cp "$SOURCE_DIR/tts_server.py" "$DEPLOY_DIR/"
 cp "$SOURCE_DIR/tts_helper.py" "$DEPLOY_DIR/"
 cp "$SOURCE_DIR/stt_helper.py" "$DEPLOY_DIR/"
 cp "$SOURCE_DIR/conversation_presets.json" "$DEPLOY_DIR/"
+cp "$SOURCE_DIR/web_search.py" "$DEPLOY_DIR/"
 cp -r "$SOURCE_DIR/templates" "$DEPLOY_DIR/"
 cp -r "$SOURCE_DIR/static" "$DEPLOY_DIR/"
+
+# users.json / memories.json – only copy if not already on server (preserve data)
+if [ ! -f "$DEPLOY_DIR/users.json" ]; then
+    cp "$SOURCE_DIR/users.json" "$DEPLOY_DIR/"
+fi
+if [ ! -f "$DEPLOY_DIR/memories.json" ]; then
+    cp "$SOURCE_DIR/memories.json" "$DEPLOY_DIR/"
+fi
+if [ ! -f "$DEPLOY_DIR/conversations.json" ]; then
+    cp "$SOURCE_DIR/conversations.json" "$DEPLOY_DIR/"
+fi
 
 # .env kopieren (nur wenn nicht schon vorhanden)
 if [ ! -f "$DEPLOY_DIR/.env" ]; then

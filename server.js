@@ -6,6 +6,8 @@ const express = require("express");
 const fetch = require("node-fetch");
 const path = require("path");
 const fs = require("fs/promises");
+const session = require("express-session");
+const bcrypt = require("bcryptjs");
 require("dotenv").config();
 
 const { execFile } = require("child_process");
@@ -30,9 +32,94 @@ const CUSTOM_PRESETS_PATH = path.join(__dirname, "conversation_presets_custom.js
 const TMP_DIR = "/tmp";
 
 const SYSTEM_PROMPT_PATH = path.join(__dirname, "system_prompt.txt");
+const MEMORIES_PATH = path.join(__dirname, "memories.json");
+const CONVERSATIONS_PATH = path.join(__dirname, "conversations.json");
+const USERS_PATH = path.join(__dirname, "users.json");
+const SESSION_SECRET = process.env.SESSION_SECRET || "bildungsplan-gent-secret-" + Date.now();
 const DEFAULT_SYSTEM_PROMPT = `Du bist ein hilfreicher Assistent für Lehrkräfte an einem SBBZ in Baden-Württemberg, Förderschwerpunkt Geistige Entwicklung (GENT).
 
 Antworte immer auf Deutsch, kurz und prägnant (maximal 2-3 kurze Absätze). Kein Markdown, keine Aufzählungen – nur Fließtext. Quellenangaben als "(Quelle 1, S. X)" im Text, keine Dateinamen.`;
+
+// ── Session & Auth ──────────────────────────────────────────────────
+app.use(
+  session({
+    secret: SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: { maxAge: 7 * 24 * 60 * 60 * 1000, httpOnly: true }, // 7 days
+  })
+);
+
+async function readUsers() {
+  try {
+    const data = await fs.readFile(USERS_PATH, "utf-8");
+    return JSON.parse(data);
+  } catch {
+    return [];
+  }
+}
+
+// Auth routes (before auth middleware so they're accessible without login)
+app.get("/login", async (req, res) => {
+  if (req.session && req.session.user) return res.redirect("./");
+  try {
+    const html = await fs.readFile(path.join(__dirname, "templates", "login.html"), "utf-8");
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(html);
+  } catch (e) {
+    res.status(500).send("Fehler beim Laden der Login-Seite.");
+  }
+});
+
+app.post("/auth/login", async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) return res.status(400).json({ error: "Benutzername und Passwort erforderlich." });
+
+  const users = await readUsers();
+  const user = users.find((u) => u.username === username);
+  if (!user || !bcrypt.compareSync(password, user.passwordHash)) {
+    return res.status(401).json({ error: "Falscher Benutzername oder Passwort." });
+  }
+
+  req.session.user = { id: user.id, username: user.username, displayName: user.displayName };
+  res.json({ ok: true });
+});
+
+app.post("/auth/logout", (req, res) => {
+  req.session.destroy(() => {
+    res.json({ ok: true });
+  });
+});
+
+app.post("/auth/change-password", async (req, res) => {
+  if (!req.session || !req.session.user) return res.status(401).json({ error: "Nicht angemeldet." });
+  const { currentPassword, newPassword } = req.body;
+  if (!currentPassword || !newPassword) return res.status(400).json({ error: "Beide Passwörter erforderlich." });
+  if (newPassword.length < 6) return res.status(400).json({ error: "Neues Passwort muss mindestens 6 Zeichen lang sein." });
+
+  const users = await readUsers();
+  const user = users.find((u) => u.id === req.session.user.id);
+  if (!user || !bcrypt.compareSync(currentPassword, user.passwordHash)) {
+    return res.status(401).json({ error: "Aktuelles Passwort ist falsch." });
+  }
+
+  user.passwordHash = bcrypt.hashSync(newPassword, 10);
+  await fs.writeFile(USERS_PATH, JSON.stringify(users, null, 2), "utf-8");
+  res.json({ ok: true });
+});
+
+// Auth middleware – protect all routes below this point
+function requireAuth(req, res, next) {
+  // Allow static files and auth routes through
+  if (req.path.startsWith("/static")) return next();
+  if (req.session && req.session.user) return next();
+  // For API requests return 401; for page requests redirect to login
+  if (req.headers.accept && req.headers.accept.includes("text/html")) {
+    return res.redirect("./login");
+  }
+  return res.status(401).json({ error: "Nicht angemeldet." });
+}
+app.use(requireAuth);
 
 // ── Static files & HTML ─────────────────────────────────────────────
 app.use("/static", express.static(path.join(__dirname, "static")));
@@ -51,12 +138,63 @@ app.get("/", async (req, res) => {
 });
 
 // ── Helpers ─────────────────────────────────────────────────────────
-async function readSystemPrompt() {
+async function readSystemPrompt(userId) {
   try {
-    return await fs.readFile(SYSTEM_PROMPT_PATH, "utf-8");
+    const base = await fs.readFile(SYSTEM_PROMPT_PATH, "utf-8");
+    const memories = await readMemories(userId);
+    if (memories.length > 0) {
+      const memBlock = memories.map((m) => `- ${m.content}`).join("\n");
+      return base + `\n\nDer Nutzer hat folgende persönliche Informationen hinterlegt, die du berücksichtigen sollst:\n${memBlock}`;
+    }
+    return base;
   } catch {
     return DEFAULT_SYSTEM_PROMPT;
   }
+}
+
+// ── Per-user memories ───────────────────────────────────────────────
+async function readAllMemories() {
+  try {
+    const data = await fs.readFile(MEMORIES_PATH, "utf-8");
+    const parsed = JSON.parse(data);
+    // Migration: if it's a flat array (old format), return as-is wrapped
+    if (Array.isArray(parsed)) return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+async function readMemories(userId) {
+  const all = await readAllMemories();
+  return all[userId] || [];
+}
+
+async function writeMemories(userId, memories) {
+  const all = await readAllMemories();
+  all[userId] = memories;
+  await fs.writeFile(MEMORIES_PATH, JSON.stringify(all, null, 2), "utf-8");
+}
+
+// ── Per-user conversation history ───────────────────────────────────
+async function readAllConversations() {
+  try {
+    const data = await fs.readFile(CONVERSATIONS_PATH, "utf-8");
+    return JSON.parse(data);
+  } catch {
+    return {};
+  }
+}
+
+async function readUserConversations(userId) {
+  const all = await readAllConversations();
+  return all[userId] || [];
+}
+
+async function writeUserConversations(userId, convos) {
+  const all = await readAllConversations();
+  all[userId] = convos;
+  await fs.writeFile(CONVERSATIONS_PATH, JSON.stringify(all, null, 2), "utf-8");
 }
 
 // ── RAG & search helpers ────────────────────────────────────────────
@@ -189,7 +327,10 @@ Suchanfrage: ILEB Formular Förderplanung Dokumentation Bildungsplanung ausfüll
 /**
  * Central context builder.
  * Returns { contextText, chunks, sources, webResults, mode }
- * mode: 'docs' | 'web' | 'none'
+ * mode: 'hybrid' | 'docs' | 'web' | 'none'
+ *
+ * Hybrid approach: when documents are found, also run a web search to
+ * supplement with current information.  Both sources are combined.
  */
 async function buildContext(message) {
   if (isConversational(message)) {
@@ -199,11 +340,30 @@ async function buildContext(message) {
   // 1. Reformulate user message into an optimal search query
   const searchQuery = await reformulateSearchQuery(message);
 
-  // 2. Try document search with the reformulated query
-  const allChunks = await queryChromaDB(searchQuery, TOP_K);
+  // 2. Run document search AND web search in parallel
+  const [allChunks, webResults] = await Promise.all([
+    queryChromaDB(searchQuery, TOP_K),
+    searchWeb(searchQuery, 4),
+  ]);
   const chunks = allChunks.filter((c) => c.score >= MIN_RELEVANCE_SCORE);
 
-  if (chunks.length > 0) {
+  const hasDocs = chunks.length > 0;
+  const hasWeb = webResults.length > 0;
+
+  if (hasDocs && hasWeb) {
+    const { sources, keyToNum } = buildNumberedSources(chunks);
+    const docPart = `Relevante Auszüge aus dem Bildungsplan GENT:\n\n${formatDocContext(chunks, keyToNum)}`;
+    const webPart = `\n\nErgänzende Informationen aus der Websuche:\n\n${formatWebResults(webResults)}`;
+    return {
+      contextText: docPart + webPart,
+      chunks,
+      sources,
+      webResults,
+      mode: "hybrid",
+    };
+  }
+
+  if (hasDocs) {
     const { sources, keyToNum } = buildNumberedSources(chunks);
     return {
       contextText: `Relevante Auszüge aus dem Bildungsplan GENT:\n\n${formatDocContext(chunks, keyToNum)}`,
@@ -214,9 +374,7 @@ async function buildContext(message) {
     };
   }
 
-  // 3. Fallback: web search (also with the reformulated query)
-  const webResults = await searchWeb(searchQuery, 4);
-  if (webResults.length > 0) {
+  if (hasWeb) {
     return {
       contextText: `Ergebnisse aus der Websuche:\n\n${formatWebResults(webResults)}`,
       chunks: [],
@@ -248,6 +406,134 @@ app.post("/system_prompt", async (req, res) => {
   }
 });
 
+// ── Memories endpoints (per-user) ───────────────────────────────────
+app.get("/memories", async (req, res) => {
+  const userId = req.session.user.id;
+  const memories = await readMemories(userId);
+  res.json({ memories });
+});
+
+app.post("/memories", async (req, res) => {
+  const { content } = req.body;
+  if (!content || !content.trim()) return res.status(400).json({ error: "Kein Inhalt." });
+  const userId = req.session.user.id;
+  const memories = await readMemories(userId);
+  const newMem = { id: Date.now().toString(), content: content.trim(), created: new Date().toISOString() };
+  memories.push(newMem);
+  await writeMemories(userId, memories);
+  res.json({ ok: true, memory: newMem });
+});
+
+app.put("/memories/:id", async (req, res) => {
+  const { content } = req.body;
+  if (!content || !content.trim()) return res.status(400).json({ error: "Kein Inhalt." });
+  const userId = req.session.user.id;
+  const memories = await readMemories(userId);
+  const mem = memories.find((m) => m.id === req.params.id);
+  if (!mem) return res.status(404).json({ error: "Erinnerung nicht gefunden." });
+  mem.content = content.trim();
+  mem.updated = new Date().toISOString();
+  await writeMemories(userId, memories);
+  res.json({ ok: true, memory: mem });
+});
+
+app.delete("/memories/:id", async (req, res) => {
+  const userId = req.session.user.id;
+  let memories = await readMemories(userId);
+  const before = memories.length;
+  memories = memories.filter((m) => m.id !== req.params.id);
+  if (memories.length === before) return res.status(404).json({ error: "Erinnerung nicht gefunden." });
+  await writeMemories(userId, memories);
+  res.json({ ok: true });
+});
+
+// ── User management endpoints ───────────────────────────────────────
+app.get("/auth/me", (req, res) => {
+  res.json({ user: req.session.user });
+});
+
+app.get("/auth/users", async (req, res) => {
+  const users = await readUsers();
+  res.json({ users: users.map((u) => ({ id: u.id, username: u.username, displayName: u.displayName, created: u.created })) });
+});
+
+app.post("/auth/users", async (req, res) => {
+  if (req.session.user.username !== "admin") return res.status(403).json({ error: "Nur der Admin darf neue Benutzer anlegen." });
+  const { username, password, displayName } = req.body;
+  if (!username || !password) return res.status(400).json({ error: "Benutzername und Passwort erforderlich." });
+  if (password.length < 6) return res.status(400).json({ error: "Passwort muss mindestens 6 Zeichen lang sein." });
+  const users = await readUsers();
+  if (users.find((u) => u.username === username)) return res.status(409).json({ error: "Benutzername bereits vergeben." });
+  const newUser = {
+    id: "user_" + Date.now(),
+    username,
+    passwordHash: bcrypt.hashSync(password, 10),
+    displayName: displayName || username,
+    created: new Date().toISOString(),
+  };
+  users.push(newUser);
+  await fs.writeFile(USERS_PATH, JSON.stringify(users, null, 2), "utf-8");
+  res.json({ ok: true, user: { id: newUser.id, username: newUser.username, displayName: newUser.displayName } });
+});
+
+app.delete("/auth/users/:id", async (req, res) => {
+  if (req.session.user.username !== "admin") return res.status(403).json({ error: "Nur der Admin darf Benutzer löschen." });
+  if (req.params.id === req.session.user.id) return res.status(400).json({ error: "Du kannst dich nicht selbst löschen." });
+  let users = await readUsers();
+  const before = users.length;
+  users = users.filter((u) => u.id !== req.params.id);
+  if (users.length === before) return res.status(404).json({ error: "Benutzer nicht gefunden." });
+  await fs.writeFile(USERS_PATH, JSON.stringify(users, null, 2), "utf-8");
+  res.json({ ok: true });
+});
+
+// ── Conversation history endpoints (per-user) ──────────────────────
+app.get("/conversations", async (req, res) => {
+  const userId = req.session.user.id;
+  const convos = await readUserConversations(userId);
+  // Return list without full messages (lighter)
+  res.json({ conversations: convos.map((c) => ({ id: c.id, title: c.title, updated: c.updated, messageCount: c.messages.length })) });
+});
+
+app.get("/conversations/:id", async (req, res) => {
+  const userId = req.session.user.id;
+  const convos = await readUserConversations(userId);
+  const convo = convos.find((c) => c.id === req.params.id);
+  if (!convo) return res.status(404).json({ error: "Gespräch nicht gefunden." });
+  res.json({ conversation: convo });
+});
+
+app.post("/conversations", async (req, res) => {
+  const { id, title, messages } = req.body;
+  if (!messages || !Array.isArray(messages)) return res.status(400).json({ error: "Keine Nachrichten." });
+  const userId = req.session.user.id;
+  const convos = await readUserConversations(userId);
+  const now = new Date().toISOString();
+  const existing = id ? convos.find((c) => c.id === id) : null;
+  if (existing) {
+    existing.messages = messages;
+    existing.title = title || existing.title;
+    existing.updated = now;
+  } else {
+    const autoTitle = title || (messages.find((m) => m.role === "user")?.content || "Neues Gespräch").slice(0, 80);
+    convos.unshift({ id: "conv_" + Date.now(), title: autoTitle, messages, created: now, updated: now });
+  }
+  // Keep max 50 conversations per user
+  if (convos.length > 50) convos.length = 50;
+  await writeUserConversations(userId, convos);
+  res.json({ ok: true, id: existing ? existing.id : convos[0].id });
+});
+
+app.delete("/conversations/:id", async (req, res) => {
+  const userId = req.session.user.id;
+  let convos = await readUserConversations(userId);
+  const before = convos.length;
+  convos = convos.filter((c) => c.id !== req.params.id);
+  if (convos.length === before) return res.status(404).json({ error: "Gespräch nicht gefunden." });
+  await writeUserConversations(userId, convos);
+  res.json({ ok: true });
+});
+
 // Chat endpoint (non-streaming)
 app.post("/chat", async (req, res) => {
   const { message, history } = req.body;
@@ -258,7 +544,8 @@ app.post("/chat", async (req, res) => {
     const { contextText, sources, webResults, mode } = await buildContext(message);
 
     // 2. Build messages
-    const systemPrompt = await readSystemPrompt();
+    const userId = req.session?.user?.id;
+    const systemPrompt = await readSystemPrompt(userId);
     const messages = [{ role: "system", content: systemPrompt }];
     if (history && Array.isArray(history)) messages.push(...history.slice(-20));
 
@@ -324,7 +611,8 @@ app.get("/chat_stream", async (req, res) => {
     res.write("data: " + JSON.stringify({ type: "sources", sources, webSources, mode }) + "\n\n");
 
     // 2. Build messages
-    const systemPrompt = await readSystemPrompt();
+    const userId = req.session?.user?.id;
+    const systemPrompt = await readSystemPrompt(userId);
     const messages = [{ role: "system", content: systemPrompt }];
     if (history && Array.isArray(history)) messages.push(...history.slice(-20));
     const augmentedMessage = contextText

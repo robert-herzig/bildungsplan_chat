@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Bildungsplan GENT – Assistent</title>
   <link rel="stylesheet" href="./static/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: false, theme: 'dark' });</script>
   <style>
     .mic-btn {
       width: 44px; height: 44px; border-radius: 50%; font-size: 1.2rem;
@@ -37,8 +39,12 @@
         </div>
         <div class="hero-actions">
           <a href="./conversation" class="icon-btn" aria-label="Elterngespräch-Simulator" title="Elterngespräch-Simulator">🗣️</a>
+          <button id="historyBtn" class="icon-btn" aria-label="Gesprächsverlauf" title="Gespeicherte Gespräche">📋</button>
+          <button id="memoriesBtn" class="icon-btn" aria-label="Erinnerungen" title="Erinnerungen verwalten">🧠</button>
+          <button id="usersBtn" class="icon-btn" aria-label="Benutzer" title="Benutzer verwalten">👥</button>
           <button id="settingsBtn" class="icon-btn" aria-label="Einstellungen" title="System-Prompt anpassen">⚙</button>
           <button id="clearBtn" class="icon-btn" aria-label="Chat leeren" title="Neuer Chat">🗑</button>
+          <button id="logoutBtn" class="icon-btn" aria-label="Abmelden" title="Abmelden">🚪</button>
         </div>
       </div>
       <div id="dbInfo" class="db-info"></div>
@@ -101,6 +107,55 @@
     </div>
   </div>
 
+  <!-- Memories Modal -->
+  <div id="memoriesModal" class="modal" style="display:none;">
+    <div class="modal-content">
+      <h3>🧠 Erinnerungen</h3>
+      <p class="muted">Der Assistent berücksichtigt diese Informationen bei jeder Antwort – z.B. deine Schule, Klasse, Fächer oder Vorlieben.</p>
+      <div id="memoriesList" class="memories-list"></div>
+      <div class="memory-add-row">
+        <input type="text" id="newMemoryInput" placeholder="Neue Erinnerung hinzufügen …" class="memory-input">
+        <button id="addMemoryBtn" class="primary small-btn">+ Hinzufügen</button>
+      </div>
+      <div class="modal-actions">
+        <button id="closeMemoriesBtn" class="secondary">Schließen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Conversation History Modal -->
+  <div id="historyModal" class="modal" style="display:none;">
+    <div class="modal-content" style="max-width:560px;">
+      <h3>📋 Gespeicherte Gespräche</h3>
+      <p class="muted">Klicke auf ein Gespräch, um es fortzusetzen.</p>
+      <div id="historyList" class="memories-list" style="max-height:400px;overflow-y:auto;"></div>
+      <div class="modal-actions">
+        <button id="closeHistoryBtn" class="secondary">Schließen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- User Management Modal -->
+  <div id="usersModal" class="modal" style="display:none;">
+    <div class="modal-content" style="max-width:520px;">
+      <h3>👥 Benutzer verwalten</h3>
+      <p class="muted">Erstelle neue Benutzer oder lösche bestehende.</p>
+      <div id="usersList" class="memories-list" style="max-height:250px;overflow-y:auto;margin-bottom:12px;"></div>
+      <details style="margin-bottom:12px;">
+        <summary style="cursor:pointer;color:var(--accent2);font-size:0.95rem;">+ Neuen Benutzer anlegen</summary>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
+          <input type="text" id="newUsername" placeholder="Benutzername" class="memory-input">
+          <input type="text" id="newDisplayName" placeholder="Anzeigename (optional)" class="memory-input">
+          <input type="password" id="newPassword" placeholder="Passwort (mind. 6 Zeichen)" class="memory-input">
+          <button id="addUserBtn" class="primary small-btn" style="align-self:flex-start;">Benutzer erstellen</button>
+        </div>
+      </details>
+      <div class="modal-actions">
+        <button id="closeUsersBtn" class="secondary">Schließen</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // ── Base path detection (works behind reverse proxy) ──
     const BASE_PATH = (() => {
@@ -127,6 +182,7 @@
 
     let chatHistory = []; // {role, content} pairs for Mistral context
     let isGenerating = false;
+    let currentConversationId = null; // track active conversation for auto-save
 
     // ── Hands-free state ──
     const HF_VOICE = 'de-DE-KatjaNeural';
@@ -158,6 +214,21 @@
     let micMonitorStream = null;
     let micMonitorAnimFrame = null;
     let streamAbortController = null;
+
+    // ── Current user / admin detection ──
+    let currentUser = null;
+    let isAdmin = false;
+    (async () => {
+      try {
+        const r = await fetch(BASE_PATH + '/auth/me');
+        const data = await r.json();
+        currentUser = data.user;
+        isAdmin = currentUser?.username === 'admin';
+        if (!isAdmin) {
+          document.getElementById('usersBtn').style.display = 'none';
+        }
+      } catch { /* ignore */ }
+    })();
 
     // ── DB info ──
     (async () => {
@@ -276,10 +347,12 @@
         return;
       }
       contentDiv.innerHTML = formatMarkdown(data.answer);
+      renderMermaidCharts(contentDiv);
       chatHistory.push({ role: 'user', content: text });
       chatHistory.push({ role: 'assistant', content: data.answer });
       renderSources(sourcesDiv, data.sources, data.webSources, data.mode);
       scrollToBottom();
+      autoSaveConversation();
 
       // TTS the full answer
       if (useTTS) {
@@ -319,9 +392,11 @@
 
           if (payload === '[DONE]') {
             contentDiv.innerHTML = formatMarkdown(fullText);
+            renderMermaidCharts(contentDiv);
             chatHistory.push({ role: 'user', content: text });
             chatHistory.push({ role: 'assistant', content: fullText });
             scrollToBottom();
+            autoSaveConversation();
 
             // Queue remaining un-spoken text for TTS
             if (useTTS && lastSpokenIdx < fullText.length) {
@@ -479,7 +554,10 @@
         audio.addEventListener('ended', cleanup, { once: true });
         audio.addEventListener('error', cleanup, { once: true });
         audio.play().catch(e => { console.warn('audio.play() failed:', e); cleanup(); });
-        setTimeout(() => { if (ttsPlaying) startMicMonitoringForInterrupt(); }, 150);
+        // Only monitor mic for interrupt when hands-free mode is on
+        if (handsFreeChk.checked) {
+          setTimeout(() => { if (ttsPlaying) startMicMonitoringForInterrupt(); }, 300);
+        }
       });
     }
 
@@ -649,10 +727,10 @@
         analyser.fftSize = 512;
         source.connect(analyser);
         const buf = new Float32Array(analyser.fftSize);
-        await new Promise(r => setTimeout(r, 800));
+        await new Promise(r => setTimeout(r, 1200));
         if (!ttsPlaying) { stopMicMonitoring(); return; }
         let consecutiveFrames = 0;
-        const REQUIRED_FRAMES = 6;
+        const REQUIRED_FRAMES = 8;
         const baselineSamples = [];
         const baselineStart = Date.now();
         let dynamicThreshold = null;
@@ -664,9 +742,9 @@
           const rms = Math.sqrt(sum / buf.length);
           if (dynamicThreshold === null) {
             baselineSamples.push(rms);
-            if (Date.now() - baselineStart > 500) {
+            if (Date.now() - baselineStart > 800) {
               const avg = baselineSamples.reduce((a, b) => a + b, 0) / baselineSamples.length;
-              dynamicThreshold = Math.max(0.15, Math.min(0.30, avg * 10));
+              dynamicThreshold = Math.max(0.18, Math.min(0.35, avg * 12));
             }
             micMonitorAnimFrame = requestAnimationFrame(tick);
             return;
@@ -708,10 +786,38 @@
         <div class="bubble-role">${role === 'user' ? '👤 Du' : '🎓 Assistent'}</div>
         <div class="bubble-content">${role === 'user' ? escapeHtml(text) : text}</div>
         <div class="bubble-sources"></div>
+        ${role === 'assistant' ? '<div class="bubble-actions"><button class="tts-play-btn small-btn" title="Antwort vorlesen">🔊 Vorlesen</button></div>' : ''}
       `;
       chatArea.appendChild(bubble);
+      if (role === 'assistant') {
+        const ttsBtn = bubble.querySelector('.tts-play-btn');
+        ttsBtn.addEventListener('click', () => playBubbleTTS(bubble, ttsBtn));
+      }
       scrollToBottom();
       return bubble;
+    }
+
+    async function playBubbleTTS(bubble, btn) {
+      const contentDiv = bubble.querySelector('.bubble-content');
+      const text = contentDiv?.textContent?.trim();
+      if (!text) return;
+      if (ttsPlaying) {
+        stopAudio();
+        btn.textContent = '🔊 Vorlesen';
+        return;
+      }
+      btn.textContent = '⏹ Stopp';
+      const clean = stripForTTS(text);
+      const chunks = splitForTTS(clean);
+      const queue = chunks.map(s => prefetchTTSBlob(s, HF_VOICE));
+      for (let i = 0; i < queue.length; i++) {
+        if (!ttsPlaying && i > 0) break; // stopped mid-playback
+        setStatus('🔊 Spricht...');
+        const blob = await queue[i];
+        if (blob) await playAudioBlob(blob);
+      }
+      btn.textContent = '🔊 Vorlesen';
+      setStatus('');
     }
 
     function renderSources(container, sources, webSources, mode) {
@@ -750,7 +856,18 @@
 
     function formatMarkdown(text) {
       if (!text) return '';
-      return text
+      // Extract mermaid code blocks before escaping HTML
+      const mermaidBlocks = [];
+      let mermaidIdx = 0;
+      text = text.replace(/```mermaid\s*\n([\s\S]*?)```/g, (_, code) => {
+        const placeholder = `%%MERMAID_${mermaidIdx}%%`;
+        const id = 'mermaid-' + Date.now() + '-' + mermaidIdx;
+        mermaidBlocks.push({ placeholder, id, code: code.trim() });
+        mermaidIdx++;
+        return placeholder;
+      });
+      // Standard HTML escaping and formatting
+      text = text
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
@@ -758,11 +875,68 @@
         .replace(/\*(.+?)\*/g, '<em>$1</em>')
         .replace(/`(.+?)`/g, '<code>$1</code>')
         .replace(/\n/g, '<br>');
+      // Re-insert mermaid blocks (they contain raw HTML, not escaped)
+      for (const { placeholder, id, code } of mermaidBlocks) {
+        const html = `<div class="mermaid-container"><div class="mermaid-chart" id="${id}">${code}</div><button class="small-btn mermaid-export-btn" data-target="${id}" title="Als PNG herunterladen">📥 PNG</button></div>`;
+        text = text.replace(placeholder, html);
+      }
+      return text;
+    }
+
+    async function renderMermaidCharts(container) {
+      const charts = container.querySelectorAll('.mermaid-chart');
+      for (const el of charts) {
+        if (el.dataset.rendered) continue;
+        try {
+          const { svg } = await mermaid.render(el.id + '-svg', el.textContent);
+          el.innerHTML = svg;
+          el.dataset.rendered = 'true';
+        } catch (e) {
+          console.warn('Mermaid render error:', e);
+          el.innerHTML = '<pre style="color:#f87171">' + escapeHtml(el.textContent) + '</pre>';
+        }
+      }
+      // Wire up PNG export buttons
+      container.querySelectorAll('.mermaid-export-btn').forEach(btn => {
+        if (btn.dataset.wired) return;
+        btn.dataset.wired = 'true';
+        btn.addEventListener('click', () => exportMermaidPNG(btn.dataset.target));
+      });
+    }
+
+    function exportMermaidPNG(targetId) {
+      const el = document.getElementById(targetId);
+      if (!el) return;
+      const svgEl = el.querySelector('svg');
+      if (!svgEl) return;
+      const svgData = new XMLSerializer().serializeToString(svgEl);
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new Image();
+      const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      img.onload = () => {
+        canvas.width = img.naturalWidth * 2;
+        canvas.height = img.naturalHeight * 2;
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        URL.revokeObjectURL(url);
+        canvas.toBlob(pngBlob => {
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(pngBlob);
+          a.download = 'flowchart.png';
+          a.click();
+          URL.revokeObjectURL(a.href);
+        }, 'image/png');
+      };
+      img.src = url;
     }
 
     // ── Clear chat ──
     clearBtn.onclick = () => {
       chatHistory = [];
+      currentConversationId = null;
       chatArea.innerHTML = '';
       chatArea.appendChild(welcomeMsg);
       welcomeMsg.style.display = '';
@@ -802,6 +976,291 @@
     // Close modal on backdrop click
     promptModal.addEventListener('click', (e) => {
       if (e.target === promptModal) promptModal.style.display = 'none';
+    });
+
+    // ── Memories modal ──
+    const memoriesModal = document.getElementById('memoriesModal');
+    const memoriesList = document.getElementById('memoriesList');
+    const newMemoryInput = document.getElementById('newMemoryInput');
+    const memoriesBtn = document.getElementById('memoriesBtn');
+
+    memoriesBtn.onclick = async () => {
+      memoriesModal.style.display = 'flex';
+      await loadMemories();
+    };
+
+    document.getElementById('closeMemoriesBtn').onclick = () => {
+      memoriesModal.style.display = 'none';
+    };
+
+    memoriesModal.addEventListener('click', (e) => {
+      if (e.target === memoriesModal) memoriesModal.style.display = 'none';
+    });
+
+    async function loadMemories() {
+      try {
+        const r = await fetch(BASE_PATH + '/memories');
+        const data = await r.json();
+        renderMemories(data.memories || []);
+      } catch {
+        memoriesList.innerHTML = '<p class="muted">Fehler beim Laden.</p>';
+      }
+    }
+
+    function renderMemories(memories) {
+      if (memories.length === 0) {
+        memoriesList.innerHTML = '<p class="muted">Noch keine Erinnerungen gespeichert.</p>';
+        return;
+      }
+      memoriesList.innerHTML = '';
+      for (const m of memories) {
+        const item = document.createElement('div');
+        item.className = 'memory-item';
+        item.innerHTML = `
+          <input type="text" class="memory-input memory-edit" value="${escapeHtml(m.content)}" data-id="${m.id}">
+          <button class="small-btn memory-save-btn" data-id="${m.id}" title="Speichern">💾</button>
+          <button class="small-btn danger memory-del-btn" data-id="${m.id}" title="Löschen">🗑</button>
+        `;
+        memoriesList.appendChild(item);
+      }
+      // Wire save buttons
+      memoriesList.querySelectorAll('.memory-save-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.dataset.id;
+          const input = memoriesList.querySelector(`.memory-edit[data-id="${id}"]`);
+          if (!input || !input.value.trim()) return;
+          await fetch(BASE_PATH + '/memories/' + id, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: input.value.trim() }),
+          });
+          await loadMemories();
+        });
+      });
+      // Wire delete buttons
+      memoriesList.querySelectorAll('.memory-del-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Erinnerung wirklich löschen?')) return;
+          await fetch(BASE_PATH + '/memories/' + btn.dataset.id, { method: 'DELETE' });
+          await loadMemories();
+        });
+      });
+    }
+
+    document.getElementById('addMemoryBtn').addEventListener('click', async () => {
+      const text = newMemoryInput.value.trim();
+      if (!text) return;
+      await fetch(BASE_PATH + '/memories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: text }),
+      });
+      newMemoryInput.value = '';
+      await loadMemories();
+    });
+
+    newMemoryInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        document.getElementById('addMemoryBtn').click();
+      }
+    });
+
+    // ── Auto-save conversation ──
+    async function autoSaveConversation() {
+      if (chatHistory.length < 2) return;
+      try {
+        const r = await fetch(BASE_PATH + '/conversations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: currentConversationId, messages: chatHistory }),
+        });
+        const data = await r.json();
+        if (data.ok && data.id) currentConversationId = data.id;
+      } catch (e) {
+        console.warn('Auto-save failed:', e);
+      }
+    }
+
+    // ── Conversation History modal ──
+    const historyBtn = document.getElementById('historyBtn');
+    const historyModal = document.getElementById('historyModal');
+    const historyList = document.getElementById('historyList');
+
+    historyBtn.onclick = async () => {
+      historyModal.style.display = 'flex';
+      await loadConversations();
+    };
+
+    document.getElementById('closeHistoryBtn').onclick = () => {
+      historyModal.style.display = 'none';
+    };
+
+    historyModal.addEventListener('click', (e) => {
+      if (e.target === historyModal) historyModal.style.display = 'none';
+    });
+
+    async function loadConversations() {
+      try {
+        const r = await fetch(BASE_PATH + '/conversations');
+        const data = await r.json();
+        renderConversations(data.conversations || []);
+      } catch {
+        historyList.innerHTML = '<p class="muted">Fehler beim Laden.</p>';
+      }
+    }
+
+    function renderConversations(convos) {
+      if (convos.length === 0) {
+        historyList.innerHTML = '<p class="muted">Noch keine gespeicherten Gespräche.</p>';
+        return;
+      }
+      historyList.innerHTML = '';
+      for (const c of convos) {
+        const item = document.createElement('div');
+        item.className = 'memory-item';
+        item.style.cssText = 'cursor:pointer;display:flex;align-items:center;gap:8px;';
+        const dateStr = new Date(c.updated).toLocaleString('de-DE', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' });
+        item.innerHTML = `
+          <div style="flex:1;min-width:0;" class="convo-load" data-id="${c.id}">
+            <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(c.title)}</div>
+            <div class="muted" style="font-size:0.8rem;">${dateStr} · ${c.messageCount} Nachrichten</div>
+          </div>
+          <button class="small-btn danger convo-del-btn" data-id="${c.id}" title="Löschen">🗑</button>
+        `;
+        historyList.appendChild(item);
+      }
+      // Wire load
+      historyList.querySelectorAll('.convo-load').forEach(el => {
+        el.addEventListener('click', () => loadConversation(el.dataset.id));
+      });
+      // Wire delete
+      historyList.querySelectorAll('.convo-del-btn').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          if (!confirm('Gespräch wirklich löschen?')) return;
+          await fetch(BASE_PATH + '/conversations/' + btn.dataset.id, { method: 'DELETE' });
+          if (currentConversationId === btn.dataset.id) currentConversationId = null;
+          await loadConversations();
+        });
+      });
+    }
+
+    async function loadConversation(id) {
+      try {
+        const r = await fetch(BASE_PATH + '/conversations/' + id);
+        const data = await r.json();
+        if (!data.conversation) return;
+        const convo = data.conversation;
+        // Reset UI
+        chatHistory = convo.messages || [];
+        currentConversationId = convo.id;
+        chatArea.innerHTML = '';
+        welcomeMsg.style.display = 'none';
+        // Rebuild bubbles
+        for (const msg of chatHistory) {
+          const bubble = appendBubble(msg.role, msg.role === 'user' ? escapeHtml(msg.content) : formatMarkdown(msg.content));
+          if (msg.role === 'assistant') {
+            const contentDiv = bubble.querySelector('.bubble-content');
+            contentDiv.innerHTML = formatMarkdown(msg.content);
+            renderMermaidCharts(contentDiv);
+          }
+        }
+        scrollToBottom();
+        historyModal.style.display = 'none';
+      } catch (e) {
+        console.warn('Load conversation failed:', e);
+      }
+    }
+
+    // ── User Management modal ──
+    const usersBtn = document.getElementById('usersBtn');
+    const usersModal = document.getElementById('usersModal');
+    const usersList = document.getElementById('usersList');
+
+    usersBtn.onclick = async () => {
+      // Show/hide the create-user form depending on admin status
+      const createSection = usersModal.querySelector('details');
+      if (createSection) createSection.style.display = isAdmin ? '' : 'none';
+      usersModal.style.display = 'flex';
+      await loadUsers();
+    };
+
+    document.getElementById('closeUsersBtn').onclick = () => {
+      usersModal.style.display = 'none';
+    };
+
+    usersModal.addEventListener('click', (e) => {
+      if (e.target === usersModal) usersModal.style.display = 'none';
+    });
+
+    async function loadUsers() {
+      try {
+        const r = await fetch(BASE_PATH + '/auth/users');
+        const data = await r.json();
+        renderUsers(data.users || []);
+      } catch {
+        usersList.innerHTML = '<p class="muted">Fehler beim Laden.</p>';
+      }
+    }
+
+    function renderUsers(users) {
+      if (users.length === 0) {
+        usersList.innerHTML = '<p class="muted">Keine Benutzer gefunden.</p>';
+        return;
+      }
+      usersList.innerHTML = '';
+      for (const u of users) {
+        const item = document.createElement('div');
+        item.className = 'memory-item';
+        item.style.cssText = 'display:flex;align-items:center;gap:8px;';
+        const dateStr = u.created ? new Date(u.created).toLocaleDateString('de-DE') : '–';
+        item.innerHTML = `
+          <div style="flex:1;">
+            <span style="font-weight:600;">${escapeHtml(u.displayName || u.username)}</span>
+            <span class="muted" style="font-size:0.8rem;"> @${escapeHtml(u.username)} · seit ${dateStr}</span>
+          </div>
+          ${isAdmin ? `<button class="small-btn danger user-del-btn" data-id="${u.id}" data-name="${escapeHtml(u.username)}" title="Löschen">🗑</button>` : ''}
+        `;
+        usersList.appendChild(item);
+      }
+      if (isAdmin) {
+        usersList.querySelectorAll('.user-del-btn').forEach(btn => {
+          btn.addEventListener('click', async () => {
+            if (!confirm(`Benutzer "${btn.dataset.name}" wirklich löschen?`)) return;
+            const r = await fetch(BASE_PATH + '/auth/users/' + btn.dataset.id, { method: 'DELETE' });
+            const data = await r.json();
+            if (!r.ok) { alert(data.error || 'Fehler'); return; }
+            await loadUsers();
+          });
+        });
+      }
+    }
+
+    document.getElementById('addUserBtn').addEventListener('click', async () => {
+      const username = document.getElementById('newUsername').value.trim();
+      const displayName = document.getElementById('newDisplayName').value.trim();
+      const password = document.getElementById('newPassword').value;
+      if (!username || !password) { alert('Benutzername und Passwort sind erforderlich.'); return; }
+      if (password.length < 6) { alert('Passwort muss mindestens 6 Zeichen lang sein.'); return; }
+      const r = await fetch(BASE_PATH + '/auth/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password, displayName: displayName || username }),
+      });
+      const data = await r.json();
+      if (!r.ok) { alert(data.error || 'Fehler'); return; }
+      document.getElementById('newUsername').value = '';
+      document.getElementById('newDisplayName').value = '';
+      document.getElementById('newPassword').value = '';
+      await loadUsers();
+    });
+
+    // ── Logout ──
+    document.getElementById('logoutBtn').addEventListener('click', async () => {
+      if (!confirm('Wirklich abmelden?')) return;
+      await fetch(BASE_PATH + '/auth/logout', { method: 'POST' });
+      window.location.href = BASE_PATH + '/login';
     });
   </script>
 </body>

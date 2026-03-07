@@ -616,8 +616,10 @@ async function playAudioBlob(blob) {
     audio.addEventListener('ended', cleanup, { once: true });
     audio.addEventListener('error', cleanup, { once: true });
     audio.play().catch(e => { console.warn('audio.play() failed:', e); cleanup(); });
-    // Brief delay before starting mic monitor so its AudioContext creation doesn't glitch audio
-    setTimeout(() => { if (ttsPlaying) startMicMonitoringForInterrupt(); }, 150);
+    // Only monitor mic for interrupt when auto-listen mode is on
+    if (document.getElementById('autoListen').checked) {
+      setTimeout(() => { if (ttsPlaying) startMicMonitoringForInterrupt(); }, 300);
+    }
   });
 }
 
@@ -783,12 +785,12 @@ async function startMicMonitoringForInterrupt() {
     source.connect(analyser);
     const buf = new Float32Array(analyser.fftSize);
     // Wait so TTS audio startup doesn't self-trigger
-    await new Promise(r => setTimeout(r, 800));
+    await new Promise(r => setTimeout(r, 1200));
     // Check again after delay – audio might have ended
     if (!ttsPlaying) { stopMicMonitoring(); return; }
     let consecutiveFrames = 0;
-    const REQUIRED_FRAMES = 6;
-    // Dynamic threshold: measure echo/ambient for 500ms, then set threshold at 10× baseline
+    const REQUIRED_FRAMES = 8;
+    // Dynamic threshold: measure echo/ambient for 800ms, then set threshold at 12× baseline
     const baselineSamples = [];
     const baselineStart = Date.now();
     let dynamicThreshold = null;  // null = still in baseline phase
@@ -800,10 +802,10 @@ async function startMicMonitoringForInterrupt() {
       const rms = Math.sqrt(sum / buf.length);
       if (dynamicThreshold === null) {
         baselineSamples.push(rms);
-        if (Date.now() - baselineStart > 500) {
+        if (Date.now() - baselineStart > 800) {
           const avg = baselineSamples.reduce((a, b) => a + b, 0) / baselineSamples.length;
-          // Clamp: never below 0.15 (needs clear speech) or above 0.30
-          dynamicThreshold = Math.max(0.15, Math.min(0.30, avg * 10));
+          // Clamp: never below 0.18 (needs clear speech) or above 0.35
+          dynamicThreshold = Math.max(0.18, Math.min(0.35, avg * 12));
         }
         micMonitorAnimFrame = requestAnimationFrame(tick);
         return;
