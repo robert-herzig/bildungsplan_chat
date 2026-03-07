@@ -766,34 +766,44 @@ async function startMicMonitoringForInterrupt() {
     source.connect(analyser);
     const buf = new Float32Array(analyser.fftSize);
     // Wait briefly so TTS audio startup doesn't self-trigger
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => setTimeout(r, 400));
     // Check again after delay – audio might have ended
     if (!currentAudio) { stopMicMonitoring(); return; }
     let consecutiveFrames = 0;
-    const REQUIRED_FRAMES = 2;    // ~2 rAF frames ≈ 33ms – responsive but avoids single-frame spikes
-    const RMS_THRESHOLD = 0.07;   // balanced: low enough for normal speech, high enough to ignore echo
+    const REQUIRED_FRAMES = 2;
+    // Dynamic threshold: measure echo/ambient for 200ms, then set threshold at 3.5× baseline
+    const baselineSamples = [];
+    const baselineStart = Date.now();
+    let dynamicThreshold = null;  // null = still in baseline phase
     function tick() {
-      if (!currentAudio) {
-        // TTS ended normally – clean up monitor resources
-        stopMicMonitoring();
-        return;
-      }
+      if (!currentAudio) { stopMicMonitoring(); return; }
       analyser.getFloatTimeDomainData(buf);
       let sum = 0;
       for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
-      if (Math.sqrt(sum / buf.length) > RMS_THRESHOLD) {
+      const rms = Math.sqrt(sum / buf.length);
+      if (dynamicThreshold === null) {
+        baselineSamples.push(rms);
+        if (Date.now() - baselineStart > 200) {
+          const avg = baselineSamples.reduce((a, b) => a + b, 0) / baselineSamples.length;
+          // Clamp: never below 0.04 (miss nothing) or above 0.18 (always catchable by speech)
+          dynamicThreshold = Math.max(0.04, Math.min(0.18, avg * 3.5));
+        }
+        micMonitorAnimFrame = requestAnimationFrame(tick);
+        return;
+      }
+      if (rms > dynamicThreshold) {
         consecutiveFrames++;
         if (consecutiveFrames >= REQUIRED_FRAMES) {
           // Sustained speech detected – interrupt!
           stopMicMonitoring();
           if (streamAbortController) streamAbortController.abort();
-          stopAudio();          // resolves pending TTS promise
+          stopAudio();
           setBusy(false);
           if (!isRecording && !recordingPending) startRecording();
           return;
         }
       } else {
-        consecutiveFrames = 0; // reset if signal drops
+        consecutiveFrames = 0;
       }
       micMonitorAnimFrame = requestAnimationFrame(tick);
     }
