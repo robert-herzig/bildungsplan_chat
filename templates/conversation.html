@@ -770,8 +770,8 @@ async function startMicMonitoringForInterrupt() {
     // Check again after delay – audio might have ended
     if (!currentAudio) { stopMicMonitoring(); return; }
     let consecutiveFrames = 0;
-    const REQUIRED_FRAMES = 4;    // ~4 rAF frames ≈ 65ms of sustained speech
-    const RMS_THRESHOLD = 0.12;   // raised from 0.05 to avoid ambient noise false positives
+    const REQUIRED_FRAMES = 2;    // ~2 rAF frames ≈ 33ms – responsive but avoids single-frame spikes
+    const RMS_THRESHOLD = 0.07;   // balanced: low enough for normal speech, high enough to ignore echo
     function tick() {
       if (!currentAudio) {
         // TTS ended normally – clean up monitor resources
