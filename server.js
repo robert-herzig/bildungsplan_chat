@@ -517,7 +517,8 @@ Wichtige Regeln:
 - Bleibe IMMER in deiner Rolle als Elternteil.
 - Antworte natürlich und menschlich, wie ein echtes Elternteil sprechen würde.
 - Halte deine Antworten kurz und gesprächstypisch (2-4 Sätze, wie in einem echten Gespräch).
-- Verwende keine Markdown-Formatierung, keine Aufzählungszeichen – sprich einfach frei.
+- Verwende KEINE Markdown-Formatierung, keine Aufzählungszeichen – sprich einfach frei.
+- Schreibe KEINE Handlungsanweisungen oder Körpersprache in Sternchen oder Klammern (z.B. *runzelt die Stirn*, [seufzt]). Deine Antwort besteht ausschließlich aus gesprochenem Text.
 - Stelle auch Rückfragen an die Lehrkraft.
 - Reagiere emotional passend zu deiner Persönlichkeit.
 - Gib NIEMALS zu, dass du eine KI bist.
@@ -601,8 +602,9 @@ app.post("/conversation/chat_stream", async (req, res) => {
     let fullResponse = "";
 
     const flushSentence = (text) => {
-      const t = text.trim();
-      if (t.length > 1) send({ type: "sentence", sentence: t });
+      // Strip *action* and [action] markers before TTS
+      const clean = text.replace(/\*[^*]*\*/g, '').replace(/\[[^\]]*\]/g, '').replace(/\s{2,}/g, ' ').trim();
+      if (clean.length > 1) send({ type: "sentence", sentence: clean });
     };
 
     reader.on("data", (chunk) => {
