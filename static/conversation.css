@@ -22,11 +22,13 @@ body {
   background: linear-gradient(180deg, #0b1224 0%, #0f172a 100%);
   color: var(--text);
   height: 100vh;
+  height: 100dvh; /* Accounts for mobile browser chrome / keyboard */
   display: flex;
   flex-direction: column;
+  overflow: hidden; /* Transcript scrolls internally, not body */
 }
 
-button, input, textarea, select { font-family: inherit; }
+button, input, textarea, select { font-family: inherit; touch-action: manipulation; }
 
 .container {
   max-width: 960px;
@@ -446,10 +448,36 @@ hr {
 
 /* ── Responsive ──────────────────────────────────────── */
 @media (max-width: 600px) {
-  .container { padding: 10px 14px; }
+  .container { padding: 8px 12px; }
+  .hero-title h1 { font-size: 1.1rem; }
+  .subtitle { font-size: 0.78rem; }
   .persona-bar { flex-direction: column; align-items: stretch; }
   .persona-bar select { min-width: 0; }
   .bubble { max-width: 95%; }
-  .input-footer { flex-wrap: wrap; gap: 10px; }
+  /* Prevent iOS input zoom – requires font-size >= 16px: */
+  .input-row textarea,
+  .form-group input,
+  .form-group textarea,
+  .form-group select,
+  .persona-bar select { font-size: 16px !important; }
+  /* Larger tap targets for touch: */
+  .mic-btn { width: 58px; height: 58px; font-size: 1.6rem; }
+  .send-btn { width: 50px; height: 50px; }
+  .small-btn { padding: 8px 14px; min-height: 40px; }
+  .transcript { -webkit-overflow-scrolling: touch; }
+  .input-footer { flex-wrap: wrap; gap: 8px; }
   .modal-content { max-height: 95vh; }
+  .scenario-box { padding: 8px 12px; }
+  .feature { padding: 6px 10px; }
+}
+
+/* Landscape phone – hide non-essential chrome to maximise conversation area */
+@media (max-width: 900px) and (orientation: landscape) and (max-height: 480px) {
+  .subtitle { display: none; }
+  .scenario-desc { display: none; }
+  .hero { margin-bottom: 2px; }
+  .hero-title h1 { font-size: 1rem; margin-bottom: 0; }
+  .persona-bar { padding: 6px 10px; }
+  .feature-list { display: none; }
+  .welcome-msg { padding: 12px 10px; }
 }

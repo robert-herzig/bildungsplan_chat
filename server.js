@@ -562,6 +562,89 @@ app.post("/conversation/chat", async (req, res) => {
   }
 });
 
+// Conversation streaming chat – sends sentences one-by-one for per-sentence TTS
+app.post("/conversation/chat_stream", async (req, res) => {
+  const { message, history, preset } = req.body;
+  if (!message || !preset) return res.status(400).json({ error: "Nachricht und Preset nötig." });
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.flushHeaders();
+
+  const send = (data) => { try { res.write("data: " + JSON.stringify(data) + "\n\n"); } catch {} };
+
+  try {
+    const systemPrompt = CONV_BASE_PROMPT + "\nDeine Persönlichkeit und Hintergrund:\n" + (preset.prompt || "");
+    const messages = [{ role: "system", content: systemPrompt }];
+    if (history && Array.isArray(history)) messages.push(...history.slice(-20));
+    messages.push({ role: "user", content: message });
+
+    const controller = new AbortController();
+    res.on("close", () => controller.abort()); // abort when client navigates away
+
+    const resp = await fetch(API_BASE + "/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + API_KEY },
+      body: JSON.stringify({ model: CONV_MODEL, messages, temperature: 0.8, max_tokens: 300, stream: true }),
+      signal: controller.signal,
+    });
+
+    if (!resp.ok) {
+      send({ type: "error", error: "Mistral-Fehler: " + (await resp.text()) });
+      return res.end();
+    }
+
+    const reader = resp.body;
+    let sseBuffer = "";
+    let textBuffer = "";
+    let fullResponse = "";
+
+    const flushSentence = (text) => {
+      const t = text.trim();
+      if (t.length > 1) send({ type: "sentence", sentence: t });
+    };
+
+    reader.on("data", (chunk) => {
+      sseBuffer += chunk.toString();
+      const lines = sseBuffer.split("\n");
+      sseBuffer = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.startsWith("data: ")) continue;
+        const payload = line.slice(6).trim();
+        if (payload === "[DONE]") continue;
+        try {
+          const token = JSON.parse(payload).choices?.[0]?.delta?.content || "";
+          if (!token) continue;
+          textBuffer += token;
+          fullResponse += token;
+          // Flush on sentence boundaries (. ! ? followed by whitespace)
+          let match;
+          while ((match = /[.!?]+\s+/.exec(textBuffer)) !== null) {
+            flushSentence(textBuffer.slice(0, match.index + match[0].trimEnd().length));
+            textBuffer = textBuffer.slice(match.index + match[0].length);
+          }
+        } catch {}
+      }
+    });
+
+    reader.on("end", () => {
+      if (textBuffer.trim().length > 1) flushSentence(textBuffer);
+      send({ type: "done", full: fullResponse.trim() });
+      res.end();
+    });
+
+    reader.on("error", (err) => {
+      if (err.name !== "AbortError") send({ type: "error", error: err.message });
+      try { res.end(); } catch {}
+    });
+
+  } catch (e) {
+    if (e.name !== "AbortError") send({ type: "error", error: e.message });
+    try { res.end(); } catch {}
+  }
+});
+
 // ── Start ───────────────────────────────────────────────────────────
 app.listen(PORT, HOST, () => {
   console.log(`🎓 Bildungsplan-Assistent läuft auf http://${HOST}:${PORT}`);

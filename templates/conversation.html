@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Elterngespräch-Simulator – Bildungsplan GENT</title>
-  <link rel="stylesheet" href="../static/conversation.css">
+  <link rel="stylesheet" href="./static/conversation.css">
 </head>
 <body>
   <div class="container">
@@ -159,6 +159,13 @@ const SILENCE_THRESHOLD = 0.015;  // RMS below this = silence
 const SILENCE_DURATION = 1800;    // ms of silence after speech → auto-stop
 const MIN_RECORD_MS = 600;        // min recording time before VAD kicks in
 
+// Streaming response & live mic monitoring for interrupt
+let micMonitorCtx = null;
+let micMonitorStream = null;
+let micMonitorAnimFrame = null;
+let streamAbortController = null;
+let recordingPending = false;   // true while getUserMedia is in flight
+
 // ── Init ──────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   await loadPresets();
@@ -270,45 +277,72 @@ async function startParentGreeting() {
   if (!currentPreset) return;
   setBusy(true);
   setStatus('🤔 Elternteil begrüßt dich...');
+  streamAbortController = new AbortController();
+  let greetBubble = null;
+  let fullGreeting = '';
 
   try {
-    const resp = await fetch(BASE + '/conversation/chat', {
+    const resp = await fetch(BASE + '/conversation/chat_stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message: '[Das Gespräch beginnt. Du kommst gerade zum Elterngespräch und begrüßt die Lehrkraft. Stelle dich kurz vor und sag warum du hier bist. Maximal 2-3 Sätze.]',
         history: [],
         preset: currentPreset
-      })
+      }),
+      signal: streamAbortController.signal
     });
-    const data = await resp.json();
-    if (data.error) throw new Error(data.error);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
 
-    const answer = data.answer;
-    conversationHistory.push({ role: 'assistant', content: answer });
-    addTranscriptBubble('parent', answer);
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let sseBuffer = '';
+    let done = false;
 
-    // TTS
-    if (document.getElementById('autoTTS').checked) {
-      setStatus('🔊 Spricht...');
-      await playTTS(answer, currentPreset.voice);
+    while (!done) {
+      const { value, done: streamDone } = await reader.read();
+      if (streamDone) break;
+      sseBuffer += decoder.decode(value, { stream: true });
+      const lines = sseBuffer.split('\n');
+      sseBuffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const event = JSON.parse(line.slice(6));
+          if (event.type === 'sentence') {
+            if (!greetBubble) greetBubble = addTranscriptBubble('parent', event.sentence);
+            else appendBubbleText(greetBubble, ' ' + event.sentence);
+            fullGreeting += (fullGreeting ? ' ' : '') + event.sentence;
+            if (document.getElementById('autoTTS').checked) {
+              setStatus('🔊 Spricht...');
+              await playTTS(event.sentence, currentPreset.voice);
+            }
+            if (isRecording || streamAbortController?.signal.aborted) { done = true; break; }
+          } else if (event.type === 'done' && event.full) {
+            fullGreeting = event.full;
+          }
+        } catch {}
+      }
     }
-    setStatus('🎙️ Du bist dran – sprich oder tippe');
+
+    if (fullGreeting.trim()) conversationHistory.push({ role: 'assistant', content: fullGreeting.trim() });
+    if (!isRecording) setStatus('🎙️ Du bist dran – sprich oder tippe');
   } catch (e) {
-    setStatus('❌ Fehler: ' + e.message);
+    if (e.name !== 'AbortError') setStatus('❌ Fehler: ' + e.message);
   } finally {
+    streamAbortController = null;
     setBusy(false);
-    // Auto-listen after parent speaks
-    if (document.getElementById('autoListen').checked) {
-      setTimeout(() => { if (!busy && !isRecording) toggleRecording(); }, 500);
+    if (!isRecording && !recordingPending && document.getElementById('autoListen').checked) {
+      setTimeout(() => { if (!busy && !isRecording && !recordingPending) toggleRecording(); }, 400);
     }
   }
 }
 
 // ── Recording ─────────────────────────────────────────────────
 async function toggleRecording() {
-  // Interrupt: if TTS is playing, stop it and allow recording
+  // Interrupt: if TTS is playing, abort stream + stop audio
   if (currentAudio) {
+    if (streamAbortController) streamAbortController.abort();
     stopAudio();
     busy = false;
   }
@@ -320,7 +354,8 @@ async function toggleRecording() {
 }
 
 async function startRecording() {
-  if (!currentPreset) return;
+  if (recordingPending || isRecording || !currentPreset) return;
+  recordingPending = true;
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
@@ -347,6 +382,8 @@ async function startRecording() {
     startVAD(stream);
   } catch (e) {
     setStatus('❌ Mikrofon nicht verfügbar: ' + e.message);
+  } finally {
+    recordingPending = false;
   }
 }
 
@@ -457,41 +494,70 @@ async function sendTextMessage() {
   await getParentResponse(text);
 }
 
-// ── Parent Response ───────────────────────────────────────────
+// ── Parent Response (streaming) ───────────────────────────────
 async function getParentResponse(userText) {
   setStatus('🤔 Elternteil überlegt...');
+  streamAbortController = new AbortController();
+  let parentBubble = null;
+  let fullResponse = '';
 
   try {
-    const resp = await fetch(BASE + '/conversation/chat', {
+    const resp = await fetch(BASE + '/conversation/chat_stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         message: userText,
         history: conversationHistory.slice(-20),
         preset: currentPreset
-      })
+      }),
+      signal: streamAbortController.signal
     });
-    const data = await resp.json();
-    if (data.error) throw new Error(data.error);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
 
-    const answer = data.answer;
-    conversationHistory.push({ role: 'assistant', content: answer });
-    addTranscriptBubble('parent', answer);
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let sseBuffer = '';
+    let done = false;
 
-    // TTS
-    if (document.getElementById('autoTTS').checked) {
-      setStatus('🔊 Spricht...');
-      await playTTS(answer, currentPreset.voice);
+    while (!done) {
+      const { value, done: streamDone } = await reader.read();
+      if (streamDone) break;
+      sseBuffer += decoder.decode(value, { stream: true });
+      const lines = sseBuffer.split('\n');
+      sseBuffer = lines.pop() || '';
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        try {
+          const event = JSON.parse(line.slice(6));
+          if (event.type === 'sentence') {
+            if (!parentBubble) parentBubble = addTranscriptBubble('parent', event.sentence);
+            else appendBubbleText(parentBubble, ' ' + event.sentence);
+            fullResponse += (fullResponse ? ' ' : '') + event.sentence;
+            if (document.getElementById('autoTTS').checked) {
+              setStatus('🔊 Spricht...');
+              await playTTS(event.sentence, currentPreset.voice);
+            }
+            if (isRecording || streamAbortController?.signal.aborted) { done = true; break; }
+          } else if (event.type === 'done' && event.full) {
+            fullResponse = event.full;
+          } else if (event.type === 'error') {
+            throw new Error(event.error);
+          }
+        } catch (e) {
+          if (e.message && !e.message.startsWith('JSON') && !e.message.startsWith('Unexpected')) throw e;
+        }
+      }
     }
 
-    setStatus('🎙️ Du bist dran – sprich oder tippe');
+    if (fullResponse.trim()) conversationHistory.push({ role: 'assistant', content: fullResponse.trim() });
+    if (!isRecording) setStatus('🎙️ Du bist dran – sprich oder tippe');
   } catch (e) {
-    setStatus('❌ Fehler: ' + e.message);
+    if (e.name !== 'AbortError') setStatus('❌ Fehler: ' + e.message);
   } finally {
+    streamAbortController = null;
     setBusy(false);
-    // Auto-listen after parent speaks
-    if (document.getElementById('autoListen').checked) {
-      setTimeout(() => { if (!busy && !isRecording) toggleRecording(); }, 500);
+    if (!isRecording && !recordingPending && document.getElementById('autoListen').checked) {
+      setTimeout(() => { if (!busy && !isRecording && !recordingPending) toggleRecording(); }, 400);
     }
   }
 }
@@ -522,6 +588,7 @@ async function playTTS(text, voice) {
       document.getElementById('stopAudioBtn').classList.remove('hidden');
 
       const cleanup = () => {
+        stopMicMonitoring();
         document.getElementById('stopAudioBtn').classList.add('hidden');
         URL.revokeObjectURL(url);
         currentAudio = null;
@@ -536,7 +603,8 @@ async function playTTS(text, voice) {
 
       try {
         await currentAudio.play();
-        // Audio is now playing – will resolve via onended or stopAudio
+        // Listen for voice interrupt while TTS is playing
+        startMicMonitoringForInterrupt();
       } catch (playErr) {
         console.warn('Audio play() blocked by browser:', playErr.name, playErr.message);
         cleanup();
@@ -550,6 +618,7 @@ async function playTTS(text, voice) {
 }
 
 function stopAudio() {
+  stopMicMonitoring();
   if (currentAudio) {
     currentAudio.pause();
     currentAudio.currentTime = 0;
@@ -580,6 +649,14 @@ function addTranscriptBubble(role, text) {
   bubble.appendChild(label);
   bubble.appendChild(content);
   transcript.appendChild(bubble);
+  transcript.scrollTop = transcript.scrollHeight;
+  return bubble;
+}
+
+function appendBubbleText(bubble, text) {
+  const content = bubble.querySelector('.bubble-text');
+  if (content) content.textContent += text;
+  const transcript = document.getElementById('transcript');
   transcript.scrollTop = transcript.scrollHeight;
 }
 
@@ -673,6 +750,49 @@ function setBusy(b) {
   document.getElementById('micBtn').disabled = !currentPreset;
   document.getElementById('sendTextBtn').disabled = b || !currentPreset;
   document.getElementById('textInput').disabled = b || !currentPreset;
+}
+
+// ── Mic monitoring for live interrupt during TTS ──────────────
+function stopMicMonitoring() {
+  if (micMonitorAnimFrame) { cancelAnimationFrame(micMonitorAnimFrame); micMonitorAnimFrame = null; }
+  if (micMonitorStream) { micMonitorStream.getTracks().forEach(t => t.stop()); micMonitorStream = null; }
+  if (micMonitorCtx && micMonitorCtx.state !== 'closed') { micMonitorCtx.close().catch(() => {}); micMonitorCtx = null; }
+}
+
+async function startMicMonitoringForInterrupt() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false }
+    });
+    micMonitorStream = stream;
+    micMonitorCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = micMonitorCtx.createMediaStreamSource(stream);
+    const analyser = micMonitorCtx.createAnalyser();
+    analyser.fftSize = 512;
+    source.connect(analyser);
+    const buf = new Float32Array(analyser.fftSize);
+    // Wait briefly so TTS audio startup doesn't self-trigger
+    await new Promise(r => setTimeout(r, 400));
+    function tick() {
+      if (!currentAudio) return; // TTS ended normally – stop monitoring
+      analyser.getFloatTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+      if (Math.sqrt(sum / buf.length) > 0.05) {
+        // User started speaking – interrupt!
+        stopMicMonitoring();
+        if (streamAbortController) streamAbortController.abort();
+        stopAudio();          // resolves pending TTS promise
+        setBusy(false);
+        if (!isRecording && !recordingPending) startRecording();
+        return;
+      }
+      micMonitorAnimFrame = requestAnimationFrame(tick);
+    }
+    tick();
+  } catch (e) {
+    console.warn('Mic interrupt monitoring failed:', e.message);
+  }
 }
 
 function blobToBase64(blob) {
