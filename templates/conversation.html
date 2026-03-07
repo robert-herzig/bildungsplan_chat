@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Elterngespräch-Simulator – Bildungsplan GENT</title>
+  <link rel="stylesheet" href="../static/conversation.css">
+</head>
+<body>
+  <div class="container">
+    <!-- ── Header ──────────────────────────────────── -->
+    <header class="hero">
+      <div class="hero-top">
+        <div class="hero-title">
+          <h1>🗣️ Elterngespräch-Simulator</h1>
+          <p class="subtitle">Trainiere Elterngespräche an einem SBBZ GENT – Berufsschulstufe</p>
+        </div>
+        <div class="hero-actions">
+          <a href="./" class="icon-btn" title="Zurück zum Assistenten">📚</a>
+          <button id="presetsBtn" class="icon-btn" title="Persönlichkeiten verwalten">⚙</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- ── Persona selector ────────────────────────── -->
+    <div class="persona-bar">
+      <label for="personaSelect">Elternteil:</label>
+      <select id="personaSelect">
+        <option value="">— Bitte wählen —</option>
+      </select>
+      <button id="newConvoBtn" class="small-btn" title="Neues Gespräch">🔄 Neu</button>
+    </div>
+
+    <!-- ── Scenario description ────────────────────── -->
+    <div id="scenarioBox" class="scenario-box hidden">
+      <div class="scenario-header">
+        <span id="scenarioName" class="scenario-name"></span>
+        <span id="scenarioChild" class="scenario-child"></span>
+      </div>
+      <p id="scenarioDesc" class="scenario-desc"></p>
+    </div>
+
+    <!-- ── Conversation transcript ─────────────────── -->
+    <main>
+      <div id="transcript" class="transcript">
+        <div id="welcomeMsg" class="welcome-msg">
+          <div class="welcome-icon">🗣️</div>
+          <h2>Gesprächssimulation</h2>
+          <p>Wähle oben ein Elternteil aus und starte das Gespräch. Du übst als Lehrkraft, das Elternteil wird von der KI gespielt.</p>
+          <div class="feature-list">
+            <div class="feature">🎙️ <strong>Sprechen</strong> — Klicke den Mikrofon-Button oder drücke <kbd>Leertaste</kbd></div>
+            <div class="feature">⌨️ <strong>Tippen</strong> — Oder schreibe deine Antwort im Textfeld</div>
+            <div class="feature">🔊 <strong>Anhören</strong> — Das Elternteil antwortet per Sprache</div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- ── Input area ──────────────────────────────── -->
+    <div class="input-area">
+      <div id="statusBar" class="status-bar">Bereit</div>
+      <div class="input-row">
+        <button id="micBtn" class="mic-btn" title="Mikrofon (Leertaste)" disabled>🎙️</button>
+        <textarea id="textInput" rows="1" placeholder="Oder tippe deine Antwort …" disabled></textarea>
+        <button id="sendTextBtn" class="send-btn" title="Senden" disabled>➤</button>
+      </div>
+      <div class="input-footer">
+        <label class="checkbox">
+          <input type="checkbox" id="autoTTS" checked>
+          <span>🔊 Sprache</span>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" id="autoListen" checked>
+          <span>🎙️ Auto-Aufnahme</span>
+        </label>
+        <button id="stopAudioBtn" class="small-btn hidden" title="Audio stoppen">⏹ Stop</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Custom Presets Modal ──────────────────────── -->
+  <div id="presetsModal" class="modal hidden">
+    <div class="modal-content modal-wide">
+      <div class="modal-header">
+        <h2>Persönlichkeiten verwalten</h2>
+        <button class="modal-close" id="closePresetsModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="customPresetsList" class="presets-list"></div>
+        <hr>
+        <h3>Neue Persönlichkeit erstellen</h3>
+        <div class="form-group">
+          <label for="newPresetName">Name (z.B. "Frau Braun")</label>
+          <input id="newPresetName" type="text" placeholder="Name des Elternteils">
+        </div>
+        <div class="form-group">
+          <label for="newPresetChild">Kind (z.B. "Anna, 15 Jahre")</label>
+          <input id="newPresetChild" type="text" placeholder="Name und Alter des Kindes">
+        </div>
+        <div class="form-group">
+          <label for="newPresetVoice">Stimme</label>
+          <select id="newPresetVoice">
+            <option value="de-DE-KatjaNeural">Katja (weiblich)</option>
+            <option value="de-DE-AmalaNeural">Amala (weiblich)</option>
+            <option value="de-DE-ElkeNeural">Elke (weiblich)</option>
+            <option value="de-DE-LouisaNeural">Louisa (weiblich)</option>
+            <option value="de-DE-MajaNeural">Maja (weiblich)</option>
+            <option value="de-DE-TanjaNeural">Tanja (weiblich)</option>
+            <option value="de-DE-ConradNeural">Conrad (männlich)</option>
+            <option value="de-DE-BerndNeural">Bernd (männlich)</option>
+            <option value="de-DE-ChristophNeural">Christoph (männlich)</option>
+            <option value="de-DE-KasperNeural">Kasper (männlich)</option>
+            <option value="de-DE-KillianNeural">Killian (männlich)</option>
+            <option value="de-DE-RalfNeural">Ralf (männlich)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="newPresetDesc">Kurzbeschreibung</label>
+          <input id="newPresetDesc" type="text" placeholder="Ein Satz, der die Person beschreibt">
+        </div>
+        <div class="form-group">
+          <label for="newPresetPrompt">Persönlichkeit & Hintergrund (System-Prompt)</label>
+          <textarea id="newPresetPrompt" rows="8" placeholder="Du bist ... Dein Verhalten im Gespräch: ..."></textarea>
+        </div>
+        <button id="savePresetBtn" class="primary">💾 Speichern</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+// ── Config ────────────────────────────────────────────────────
+// Base path detection (works behind reverse proxy)
+const BASE = (() => {
+  const p = window.location.pathname;
+  if (p.startsWith('/bildungsplan')) return '/bildungsplan';
+  return '';
+})();
+let allPresets = [];
+let currentPreset = null;
+let conversationHistory = [];
+let isRecording = false;
+let mediaRecorder = null;
+let audioChunks = [];
+let currentAudio = null;
+let busy = false;
+
+// ── Init ──────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadPresets();
+  setupEventListeners();
+});
+
+async function loadPresets() {
+  try {
+    const resp = await fetch(BASE + '/conversation/presets');
+    const data = await resp.json();
+    allPresets = data.presets || [];
+    populateDropdown();
+    renderCustomPresets();
+  } catch (e) {
+    console.error('Fehler beim Laden der Persönlichkeiten:', e);
+  }
+}
+
+function populateDropdown() {
+  const sel = document.getElementById('personaSelect');
+  sel.innerHTML = '<option value="">— Bitte wählen —</option>';
+  for (const p of allPresets) {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.name;
+    sel.appendChild(opt);
+  }
+}
+
+// ── Event Listeners ───────────────────────────────────────────
+function setupEventListeners() {
+  // Persona selection
+  document.getElementById('personaSelect').addEventListener('change', onPersonaChange);
+  document.getElementById('newConvoBtn').addEventListener('click', resetConversation);
+
+  // Input
+  document.getElementById('micBtn').addEventListener('click', toggleRecording);
+  document.getElementById('sendTextBtn').addEventListener('click', sendTextMessage);
+  document.getElementById('textInput').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTextMessage(); }
+  });
+
+  // Keyboard shortcuts
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'INPUT') {
+      e.preventDefault();
+      if (!busy && currentPreset) toggleRecording();
+    }
+  });
+
+  // Audio stop
+  document.getElementById('stopAudioBtn').addEventListener('click', stopAudio);
+
+  // Presets modal
+  document.getElementById('presetsBtn').addEventListener('click', () => {
+    document.getElementById('presetsModal').classList.remove('hidden');
+  });
+  document.getElementById('closePresetsModal').addEventListener('click', () => {
+    document.getElementById('presetsModal').classList.add('hidden');
+  });
+  document.getElementById('savePresetBtn').addEventListener('click', saveCustomPreset);
+}
+
+// ── Persona Change ────────────────────────────────────────────
+function onPersonaChange() {
+  const id = document.getElementById('personaSelect').value;
+  if (!id) {
+    currentPreset = null;
+    document.getElementById('scenarioBox').classList.add('hidden');
+    setInputEnabled(false);
+    return;
+  }
+  currentPreset = allPresets.find(p => p.id === id);
+  if (!currentPreset) return;
+
+  document.getElementById('scenarioName').textContent = currentPreset.name;
+  document.getElementById('scenarioChild').textContent = '👶 ' + currentPreset.child;
+  document.getElementById('scenarioDesc').textContent = currentPreset.description;
+  document.getElementById('scenarioBox').classList.remove('hidden');
+
+  resetConversation();
+}
+
+function resetConversation() {
+  conversationHistory = [];
+  const transcript = document.getElementById('transcript');
+  transcript.innerHTML = '';
+  stopAudio();
+  setInputEnabled(!!currentPreset);
+  if (currentPreset) {
+    setStatus('Bereit – Starte das Gespräch als Lehrkraft');
+    // Add a greeting from the parent to start the conversation
+    startParentGreeting();
+  }
+}
+
+async function startParentGreeting() {
+  if (!currentPreset) return;
+  setBusy(true);
+  setStatus('🤔 Elternteil begrüßt dich...');
+
+  try {
+    const resp = await fetch(BASE + '/conversation/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: '[Das Gespräch beginnt. Du kommst gerade zum Elterngespräch und begrüßt die Lehrkraft. Stelle dich kurz vor und sag warum du hier bist. Maximal 2-3 Sätze.]',
+        history: [],
+        preset: currentPreset
+      })
+    });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+
+    const answer = data.answer;
+    conversationHistory.push({ role: 'assistant', content: answer });
+    addTranscriptBubble('parent', answer);
+
+    // TTS
+    if (document.getElementById('autoTTS').checked) {
+      setStatus('🔊 Spricht...');
+      await playTTS(answer, currentPreset.voice);
+    }
+    setStatus('🎙️ Du bist dran – sprich oder tippe');
+  } catch (e) {
+    setStatus('❌ Fehler: ' + e.message);
+  } finally {
+    setBusy(false);
+    // Auto-listen after parent speaks
+    if (document.getElementById('autoListen').checked && document.getElementById('autoTTS').checked) {
+      setTimeout(() => { if (!busy && !isRecording) toggleRecording(); }, 500);
+    }
+  }
+}
+
+// ── Recording ─────────────────────────────────────────────────
+async function toggleRecording() {
+  if (isRecording) {
+    stopRecording();
+  } else {
+    await startRecording();
+  }
+}
+
+async function startRecording() {
+  if (busy || !currentPreset) return;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+    audioChunks = [];
+    mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+    mediaRecorder.onstop = () => {
+      stream.getTracks().forEach(t => t.stop());
+      const blob = new Blob(audioChunks, { type: 'audio/webm' });
+      processAudioBlob(blob);
+    };
+    mediaRecorder.start();
+    isRecording = true;
+    document.getElementById('micBtn').classList.add('recording');
+    document.getElementById('micBtn').textContent = '⏹';
+    setStatus('🎙️ Aufnahme läuft... (nochmal klicken zum Beenden)');
+  } catch (e) {
+    setStatus('❌ Mikrofon nicht verfügbar: ' + e.message);
+  }
+}
+
+function stopRecording() {
+  if (mediaRecorder && isRecording) {
+    mediaRecorder.stop();
+    isRecording = false;
+    document.getElementById('micBtn').classList.remove('recording');
+    document.getElementById('micBtn').textContent = '🎙️';
+  }
+}
+
+async function processAudioBlob(blob) {
+  setBusy(true);
+  setStatus('📝 Transkribiere...');
+
+  try {
+    // Convert blob to base64
+    const base64 = await blobToBase64(blob);
+
+    // STT
+    const sttResp = await fetch(BASE + '/conversation/stt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ audio: base64 })
+    });
+    const sttData = await sttResp.json();
+    if (sttData.error) throw new Error(sttData.error);
+
+    const userText = sttData.text;
+    if (!userText || !userText.trim()) {
+      setStatus('⚠️ Keine Sprache erkannt. Versuche es nochmal.');
+      setBusy(false);
+      return;
+    }
+
+    // Show user message
+    addTranscriptBubble('teacher', userText);
+    conversationHistory.push({ role: 'user', content: userText });
+
+    // Get parent response
+    await getParentResponse(userText);
+  } catch (e) {
+    setStatus('❌ Fehler: ' + e.message);
+    setBusy(false);
+  }
+}
+
+// ── Text Input ────────────────────────────────────────────────
+async function sendTextMessage() {
+  const input = document.getElementById('textInput');
+  const text = input.value.trim();
+  if (!text || busy || !currentPreset) return;
+
+  input.value = '';
+  addTranscriptBubble('teacher', text);
+  conversationHistory.push({ role: 'user', content: text });
+
+  setBusy(true);
+  await getParentResponse(text);
+}
+
+// ── Parent Response ───────────────────────────────────────────
+async function getParentResponse(userText) {
+  setStatus('🤔 Elternteil überlegt...');
+
+  try {
+    const resp = await fetch(BASE + '/conversation/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: userText,
+        history: conversationHistory.slice(-20),
+        preset: currentPreset
+      })
+    });
+    const data = await resp.json();
+    if (data.error) throw new Error(data.error);
+
+    const answer = data.answer;
+    conversationHistory.push({ role: 'assistant', content: answer });
+    addTranscriptBubble('parent', answer);
+
+    // TTS
+    if (document.getElementById('autoTTS').checked) {
+      setStatus('🔊 Spricht...');
+      await playTTS(answer, currentPreset.voice);
+    }
+
+    setStatus('🎙️ Du bist dran – sprich oder tippe');
+  } catch (e) {
+    setStatus('❌ Fehler: ' + e.message);
+  } finally {
+    setBusy(false);
+    // Auto-listen after parent speaks
+    if (document.getElementById('autoListen').checked && document.getElementById('autoTTS').checked) {
+      setTimeout(() => { if (!busy && !isRecording) toggleRecording(); }, 500);
+    }
+  }
+}
+
+// ── TTS ───────────────────────────────────────────────────────
+async function playTTS(text, voice) {
+  return new Promise(async (resolve) => {
+    try {
+      const resp = await fetch(BASE + '/conversation/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, voice })
+      });
+      if (!resp.ok) { resolve(); return; }
+
+      const audioBlob = await resp.blob();
+      const url = URL.createObjectURL(audioBlob);
+      currentAudio = new Audio(url);
+      document.getElementById('stopAudioBtn').classList.remove('hidden');
+
+      currentAudio.onended = () => {
+        document.getElementById('stopAudioBtn').classList.add('hidden');
+        URL.revokeObjectURL(url);
+        currentAudio = null;
+        resolve();
+      };
+      currentAudio.onerror = () => {
+        document.getElementById('stopAudioBtn').classList.add('hidden');
+        currentAudio = null;
+        resolve();
+      };
+      currentAudio.play();
+    } catch (e) {
+      resolve();
+    }
+  });
+}
+
+function stopAudio() {
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio = null;
+  }
+  document.getElementById('stopAudioBtn').classList.add('hidden');
+}
+
+// ── Transcript UI ─────────────────────────────────────────────
+function addTranscriptBubble(role, text) {
+  const transcript = document.getElementById('transcript');
+  const welcome = document.getElementById('welcomeMsg');
+  if (welcome) welcome.remove();
+
+  const bubble = document.createElement('div');
+  bubble.className = `bubble bubble-${role}`;
+
+  const label = document.createElement('div');
+  label.className = 'bubble-label';
+  label.textContent = role === 'teacher' ? '🎓 Sie (Lehrkraft)' : `👤 ${currentPreset ? currentPreset.name : 'Elternteil'}`;
+
+  const content = document.createElement('div');
+  content.className = 'bubble-text';
+  content.textContent = text;
+
+  bubble.appendChild(label);
+  bubble.appendChild(content);
+  transcript.appendChild(bubble);
+  transcript.scrollTop = transcript.scrollHeight;
+}
+
+// ── Custom Presets ────────────────────────────────────────────
+function renderCustomPresets() {
+  const list = document.getElementById('customPresetsList');
+  const custom = allPresets.filter(p => p.custom);
+  if (custom.length === 0) {
+    list.innerHTML = '<p class="muted">Noch keine eigenen Persönlichkeiten erstellt.</p>';
+    return;
+  }
+  list.innerHTML = '';
+  for (const p of custom) {
+    const item = document.createElement('div');
+    item.className = 'preset-item';
+    item.innerHTML = `
+      <div class="preset-info">
+        <strong>${p.name}</strong> — ${p.child}<br>
+        <small class="muted">${p.description}</small>
+      </div>
+      <button class="small-btn danger" onclick="deletePreset('${p.id}')">🗑</button>
+    `;
+    list.appendChild(item);
+  }
+}
+
+async function saveCustomPreset() {
+  const name = document.getElementById('newPresetName').value.trim();
+  const child = document.getElementById('newPresetChild').value.trim();
+  const voice = document.getElementById('newPresetVoice').value;
+  const description = document.getElementById('newPresetDesc').value.trim();
+  const prompt = document.getElementById('newPresetPrompt').value.trim();
+
+  if (!name || !child || !prompt) {
+    alert('Bitte fülle mindestens Name, Kind und Persönlichkeit aus.');
+    return;
+  }
+
+  const preset = {
+    id: 'custom_' + Date.now(),
+    name, child, voice,
+    description: description || name,
+    prompt,
+    custom: true
+  };
+
+  try {
+    const resp = await fetch(BASE + '/conversation/presets/custom', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(preset)
+    });
+    if (!resp.ok) throw new Error('Speichern fehlgeschlagen');
+
+    // Clear form
+    document.getElementById('newPresetName').value = '';
+    document.getElementById('newPresetChild').value = '';
+    document.getElementById('newPresetDesc').value = '';
+    document.getElementById('newPresetPrompt').value = '';
+
+    await loadPresets();
+  } catch (e) {
+    alert('Fehler: ' + e.message);
+  }
+}
+
+async function deletePreset(id) {
+  if (!confirm('Diese Persönlichkeit wirklich löschen?')) return;
+  try {
+    await fetch(BASE + '/conversation/presets/custom/' + id, { method: 'DELETE' });
+    await loadPresets();
+  } catch (e) {
+    alert('Fehler: ' + e.message);
+  }
+}
+
+// ── Helpers ───────────────────────────────────────────────────
+function setStatus(text) {
+  document.getElementById('statusBar').textContent = text;
+}
+
+function setInputEnabled(enabled) {
+  document.getElementById('micBtn').disabled = !enabled;
+  document.getElementById('textInput').disabled = !enabled;
+  document.getElementById('sendTextBtn').disabled = !enabled;
+}
+
+function setBusy(b) {
+  busy = b;
+  document.getElementById('micBtn').disabled = b || !currentPreset;
+  document.getElementById('sendTextBtn').disabled = b || !currentPreset;
+  document.getElementById('textInput').disabled = b || !currentPreset;
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64 = reader.result.split(',')[1];
+      resolve(base64);
+    };
+    reader.readAsDataURL(blob);
+  });
+}
+</script>
+</body>
+</html>

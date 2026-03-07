@@ -11,7 +11,7 @@ require("dotenv").config();
 const { execFile } = require("child_process");
 
 const app = express();
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "25mb" }));
 
 // ── Config ──────────────────────────────────────────────────────────
 const API_BASE = process.env.MISTRAL_API_BASE || "https://api.mistral.ai/v1";
@@ -24,6 +24,10 @@ const MIN_RELEVANCE_SCORE = parseFloat(process.env.MIN_RELEVANCE_SCORE || "0.79"
 const PORT = parseInt(process.env.PORT || "5001", 10);
 const HOST = process.env.HOST || "127.0.0.1";
 const TIMEOUT = parseInt(process.env.MODEL_TIMEOUT || "120", 10) * 1000;
+const CONV_MODEL = process.env.CONV_MODEL || "mistral-medium-latest";
+const PRESETS_PATH = path.join(__dirname, "conversation_presets.json");
+const CUSTOM_PRESETS_PATH = path.join(__dirname, "conversation_presets_custom.json");
+const TMP_DIR = "/tmp";
 
 const SYSTEM_PROMPT_PATH = path.join(__dirname, "system_prompt.txt");
 const DEFAULT_SYSTEM_PROMPT = `Du bist ein hilfreicher Assistent für Lehrkräfte an einem SBBZ (Sonderpädagogisches Bildungs- und Beratungszentrum) in Baden-Württemberg, Förderschwerpunkt Geistige Entwicklung (GENT).
@@ -359,8 +363,208 @@ app.get("/db_info", async (req, res) => {
   }
 });
 
+// ── Conversation Simulator ──────────────────────────────────────────
+
+// Serve the conversation page
+app.get("/conversation", async (req, res) => {
+  try {
+    const html = await fs.readFile(
+      path.join(__dirname, "templates", "conversation.html"),
+      "utf-8"
+    );
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(html);
+  } catch (e) {
+    res.status(500).send("Fehler beim Laden der Seite.");
+  }
+});
+
+// Presets management
+async function loadAllPresets() {
+  let builtIn = [];
+  try {
+    const raw = await fs.readFile(PRESETS_PATH, "utf-8");
+    builtIn = JSON.parse(raw).presets || [];
+  } catch {}
+  let custom = [];
+  try {
+    const raw = await fs.readFile(CUSTOM_PRESETS_PATH, "utf-8");
+    custom = JSON.parse(raw) || [];
+  } catch {}
+  return [...builtIn, ...custom.map(p => ({ ...p, custom: true }))];
+}
+
+app.get("/conversation/presets", async (req, res) => {
+  const presets = await loadAllPresets();
+  res.json({ presets });
+});
+
+app.post("/conversation/presets/custom", async (req, res) => {
+  const preset = req.body;
+  if (!preset || !preset.id) return res.status(400).json({ error: "Ungültiges Preset." });
+  let custom = [];
+  try {
+    const raw = await fs.readFile(CUSTOM_PRESETS_PATH, "utf-8");
+    custom = JSON.parse(raw) || [];
+  } catch {}
+  custom.push(preset);
+  await fs.writeFile(CUSTOM_PRESETS_PATH, JSON.stringify(custom, null, 2), "utf-8");
+  res.json({ ok: true });
+});
+
+app.delete("/conversation/presets/custom/:id", async (req, res) => {
+  let custom = [];
+  try {
+    const raw = await fs.readFile(CUSTOM_PRESETS_PATH, "utf-8");
+    custom = JSON.parse(raw) || [];
+  } catch {}
+  custom = custom.filter(p => p.id !== req.params.id);
+  await fs.writeFile(CUSTOM_PRESETS_PATH, JSON.stringify(custom, null, 2), "utf-8");
+  res.json({ ok: true });
+});
+
+// STT – Speech to text via Voxtral
+app.post("/conversation/stt", async (req, res) => {
+  const { audio } = req.body;
+  if (!audio) return res.status(400).json({ error: "Kein Audio." });
+
+  const tmpFile = path.join(TMP_DIR, `stt_${Date.now()}.webm`);
+  try {
+    // Write base64 audio to temp file
+    const buf = Buffer.from(audio, "base64");
+    const fsSync = require("fs");
+    fsSync.writeFileSync(tmpFile, buf);
+
+    // Call Python STT helper
+    const result = await new Promise((resolve) => {
+      execFile(
+        "python3",
+        [path.join(__dirname, "stt_helper.py"), tmpFile, "de"],
+        { cwd: __dirname, timeout: 60000, env: { ...process.env } },
+        (err, stdout, stderr) => {
+          if (err) {
+            console.error("STT error:", stderr || err.message);
+            resolve({ error: "Transkription fehlgeschlagen: " + (stderr || err.message) });
+            return;
+          }
+          try { resolve(JSON.parse(stdout)); }
+          catch { resolve({ error: "JSON-Fehler bei STT" }); }
+        }
+      );
+    });
+
+    // Clean up temp file
+    try { fsSync.unlinkSync(tmpFile); } catch {}
+
+    if (result.error) return res.status(500).json(result);
+    res.json(result);
+  } catch (e) {
+    try { require("fs").unlinkSync(tmpFile); } catch {}
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// TTS – Text to speech via edge-tts
+app.post("/conversation/tts", async (req, res) => {
+  const { text, voice } = req.body;
+  if (!text) return res.status(400).json({ error: "Kein Text." });
+
+  const ttsVoice = voice || "de-DE-KatjaNeural";
+  const tmpFile = path.join(TMP_DIR, `tts_${Date.now()}.mp3`);
+
+  try {
+    const result = await new Promise((resolve) => {
+      execFile(
+        "python3",
+        [path.join(__dirname, "tts_helper.py"), text, ttsVoice, tmpFile],
+        { cwd: __dirname, timeout: 30000 },
+        (err, stdout, stderr) => {
+          if (err) {
+            console.error("TTS error:", stderr || err.message);
+            resolve({ error: "TTS fehlgeschlagen" });
+            return;
+          }
+          try { resolve(JSON.parse(stdout)); }
+          catch { resolve({ error: "TTS JSON-Fehler" }); }
+        }
+      );
+    });
+
+    if (result.error) return res.status(500).json(result);
+
+    // Stream audio file
+    const fsSync = require("fs");
+    const stat = fsSync.statSync(tmpFile);
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Content-Length", stat.size);
+    const stream = fsSync.createReadStream(tmpFile);
+    stream.pipe(res);
+    stream.on("end", () => {
+      try { fsSync.unlinkSync(tmpFile); } catch {}
+    });
+  } catch (e) {
+    try { require("fs").unlinkSync(tmpFile); } catch {}
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Conversation chat – uses mistral-medium with parent roleplay
+const CONV_BASE_PROMPT = `Du spielst die Rolle eines Elternteils in einem Elterngespräch an einem SBBZ (Sonderpädagogisches Bildungs- und Beratungszentrum) mit Förderschwerpunkt Geistige Entwicklung (GENT) in Baden-Württemberg. Das Gespräch findet in der Berufsschulstufe statt.
+
+Die Lehrkraft (der Benutzer) führt das Gespräch mit dir.
+
+Wichtige Regeln:
+- Bleibe IMMER in deiner Rolle als Elternteil.
+- Antworte natürlich und menschlich, wie ein echtes Elternteil sprechen würde.
+- Halte deine Antworten kurz und gesprächstypisch (2-4 Sätze, wie in einem echten Gespräch).
+- Verwende keine Markdown-Formatierung, keine Aufzählungszeichen – sprich einfach frei.
+- Stelle auch Rückfragen an die Lehrkraft.
+- Reagiere emotional passend zu deiner Persönlichkeit.
+- Gib NIEMALS zu, dass du eine KI bist.
+`;
+
+app.post("/conversation/chat", async (req, res) => {
+  const { message, history, preset } = req.body;
+  if (!message || !preset) return res.status(400).json({ error: "Nachricht und Preset nötig." });
+
+  try {
+    const systemPrompt = CONV_BASE_PROMPT + "\nDeine Persönlichkeit und Hintergrund:\n" + (preset.prompt || "");
+    const messages = [{ role: "system", content: systemPrompt }];
+    if (history && Array.isArray(history)) messages.push(...history.slice(-20));
+    messages.push({ role: "user", content: message });
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), TIMEOUT);
+    const resp = await fetch(API_BASE + "/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + API_KEY },
+      body: JSON.stringify({
+        model: CONV_MODEL,
+        messages,
+        temperature: 0.8,
+        max_tokens: 300,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      return res.status(502).json({ error: "Mistral-Fehler: " + errText });
+    }
+
+    const data = await resp.json();
+    const answer = data.choices[0].message.content;
+    res.json({ answer });
+  } catch (e) {
+    console.error("Conversation chat error:", e);
+    res.status(500).json({ error: e.message || "Interner Fehler." });
+  }
+});
+
 // ── Start ───────────────────────────────────────────────────────────
 app.listen(PORT, HOST, () => {
   console.log(`🎓 Bildungsplan-Assistent läuft auf http://${HOST}:${PORT}`);
-  console.log(`   Modell: ${MODEL}`);
+  console.log(`   Chat-Modell: ${MODEL}`);
+  console.log(`   Konversations-Modell: ${CONV_MODEL}`);
 });
