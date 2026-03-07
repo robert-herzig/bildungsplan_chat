@@ -21,6 +21,12 @@ except ImportError:
     sys.exit(1)
 
 try:
+    from docx import Document as DocxDocument
+except ImportError:
+    print("❌ python-docx fehlt. Installiere mit: pip3 install python-docx")
+    sys.exit(1)
+
+try:
     import chromadb
 except ImportError:
     print("❌ chromadb fehlt. Installiere mit: pip3 install chromadb")
@@ -56,6 +62,60 @@ def extract_text_from_pdf(pdf_path):
             })
     doc.close()
     return pages
+
+
+def extract_text_from_docx(docx_path):
+    """Extrahiert Text aus einer DOCX-Datei (als einzelne 'Seite')."""
+    doc = DocxDocument(docx_path)
+    paragraphs = []
+    current_section = []
+    section_num = 1
+    result = []
+
+    for para in doc.paragraphs:
+        text = para.text.strip()
+        if not text:
+            continue
+        current_section.append(text)
+        # Split into logical sections (~2000 chars) to avoid one giant page
+        joined = "\n".join(current_section)
+        if len(joined) > 2000:
+            result.append({
+                "text": joined,
+                "page": section_num,
+                "source": os.path.basename(docx_path),
+            })
+            current_section = []
+            section_num += 1
+
+    # Remaining text
+    if current_section:
+        joined = "\n".join(current_section)
+        if joined.strip():
+            result.append({
+                "text": joined,
+                "page": section_num,
+                "source": os.path.basename(docx_path),
+            })
+            section_num += 1
+
+    # Also extract text from tables
+    for table in doc.tables:
+        table_text = []
+        for row in table.rows:
+            row_text = [cell.text.strip() for cell in row.cells if cell.text.strip()]
+            if row_text:
+                table_text.append(" | ".join(row_text))
+        if table_text:
+            joined = "\n".join(table_text)
+            result.append({
+                "text": joined,
+                "page": section_num,
+                "source": os.path.basename(docx_path),
+            })
+            section_num += 1
+
+    return result
 
 
 def chunk_text(text, chunk_size=CHUNK_SIZE, overlap=CHUNK_OVERLAP):
@@ -157,23 +217,30 @@ def ingest_pdfs():
         metadata={"hnsw:space": "cosine"},
     )
 
-    # PDFs finden
-    pdf_folder = Path(PDF_FOLDER)
-    pdf_files = sorted(pdf_folder.glob("*.pdf"))
-    if not pdf_files:
-        print(f"❌ Keine PDF-Dateien in {pdf_folder.resolve()} gefunden!")
+    # Dateien finden (PDFs und DOCX)
+    doc_folder = Path(PDF_FOLDER)
+    pdf_files = sorted(doc_folder.glob("*.pdf"))
+    docx_files = sorted(doc_folder.glob("*.docx"))
+    all_files = pdf_files + docx_files
+    if not all_files:
+        print(f"❌ Keine PDF- oder DOCX-Dateien in {doc_folder.resolve()} gefunden!")
         sys.exit(1)
 
-    print(f"📂 {len(pdf_files)} PDF(s) gefunden in {pdf_folder.resolve()}")
+    print(f"📂 {len(pdf_files)} PDF(s) und {len(docx_files)} DOCX-Datei(en) gefunden in {doc_folder.resolve()}")
 
     all_chunks = []
     all_ids = []
     all_metadatas = []
 
-    for pdf_path in pdf_files:
-        print(f"\n📄 Verarbeite: {pdf_path.name}")
-        pages = extract_text_from_pdf(str(pdf_path))
-        print(f"   {len(pages)} Seite(n) mit Text extrahiert")
+    for file_path in all_files:
+        print(f"\n📄 Verarbeite: {file_path.name}")
+        if file_path.suffix.lower() == '.pdf':
+            pages = extract_text_from_pdf(str(file_path))
+        elif file_path.suffix.lower() == '.docx':
+            pages = extract_text_from_docx(str(file_path))
+        else:
+            continue
+        print(f"   {len(pages)} Abschnitt(e) mit Text extrahiert")
 
         for page_info in pages:
             chunks = chunk_text(page_info["text"])

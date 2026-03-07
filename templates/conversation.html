@@ -782,13 +782,13 @@ async function startMicMonitoringForInterrupt() {
     analyser.fftSize = 512;
     source.connect(analyser);
     const buf = new Float32Array(analyser.fftSize);
-    // Wait briefly so TTS audio startup doesn't self-trigger
-    await new Promise(r => setTimeout(r, 400));
+    // Wait so TTS audio startup doesn't self-trigger
+    await new Promise(r => setTimeout(r, 800));
     // Check again after delay – audio might have ended
     if (!ttsPlaying) { stopMicMonitoring(); return; }
     let consecutiveFrames = 0;
-    const REQUIRED_FRAMES = 2;
-    // Dynamic threshold: measure echo/ambient for 200ms, then set threshold at 3.5× baseline
+    const REQUIRED_FRAMES = 6;
+    // Dynamic threshold: measure echo/ambient for 500ms, then set threshold at 10× baseline
     const baselineSamples = [];
     const baselineStart = Date.now();
     let dynamicThreshold = null;  // null = still in baseline phase
@@ -800,10 +800,10 @@ async function startMicMonitoringForInterrupt() {
       const rms = Math.sqrt(sum / buf.length);
       if (dynamicThreshold === null) {
         baselineSamples.push(rms);
-        if (Date.now() - baselineStart > 200) {
+        if (Date.now() - baselineStart > 500) {
           const avg = baselineSamples.reduce((a, b) => a + b, 0) / baselineSamples.length;
-          // Clamp: never below 0.04 (miss nothing) or above 0.18 (always catchable by speech)
-          dynamicThreshold = Math.max(0.04, Math.min(0.18, avg * 3.5));
+          // Clamp: never below 0.15 (needs clear speech) or above 0.30
+          dynamicThreshold = Math.max(0.15, Math.min(0.30, avg * 10));
         }
         micMonitorAnimFrame = requestAnimationFrame(tick);
         return;

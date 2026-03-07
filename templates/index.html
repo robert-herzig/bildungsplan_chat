@@ -5,6 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Bildungsplan GENT – Assistent</title>
   <link rel="stylesheet" href="./static/style.css">
+  <style>
+    .mic-btn {
+      width: 44px; height: 44px; border-radius: 50%; font-size: 1.2rem;
+      display: flex; align-items: center; justify-content: center; padding: 0; flex-shrink: 0;
+      border: 1px solid #334155; background: #0b1224; color: var(--text); cursor: pointer;
+      transition: background 0.2s;
+    }
+    .mic-btn:hover { background: #1e293b; }
+    .mic-btn.recording { background: #dc2626; border-color: #dc2626; animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
+    .status-bar {
+      font-size: 0.85rem; color: var(--muted); padding: 6px 12px;
+      background: rgba(255,255,255,0.03); border-radius: 8px; margin-bottom: 6px;
+      text-align: center;
+    }
+    .small-btn {
+      border: 1px solid #334155; background: #0b1224; color: var(--text);
+      padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 0.8rem;
+    }
+    .small-btn:hover { background: #1e293b; }
+  </style>
 </head>
 <body>
   <div class="container">
@@ -39,15 +60,24 @@
       </div>
 
       <div class="input-area">
+        <div id="statusBar" class="status-bar" style="display:none;"></div>
         <div class="input-row">
+          <button id="micBtn" class="mic-btn" title="Mikrofon (Leertaste)">🎙️</button>
           <textarea id="userInput" rows="2" placeholder="Stelle eine Frage zum Bildungsplan …" autofocus></textarea>
           <button id="sendBtn" class="primary send-btn" title="Senden">➤</button>
         </div>
         <div class="input-footer">
-          <label class="checkbox">
-            <input type="checkbox" id="streaming" checked>
-            <span>Streaming</span>
-          </label>
+          <div style="display:flex;gap:12px;align-items:center;">
+            <label class="checkbox">
+              <input type="checkbox" id="streaming" checked>
+              <span>Streaming</span>
+            </label>
+            <label class="checkbox">
+              <input type="checkbox" id="handsFree">
+              <span>🎙️ Freisprechen</span>
+            </label>
+          </div>
+          <button id="stopAudioBtn" class="small-btn" style="display:none;" title="Audio stoppen">⏹ Stop</button>
           <small class="muted">Basierend auf deinen Bildungsplan-Dokumenten</small>
         </div>
       </div>
@@ -90,9 +120,44 @@
     const promptModal = document.getElementById('promptModal');
     const promptEditor = document.getElementById('promptEditor');
     const dbInfo = document.getElementById('dbInfo');
+    const micBtn = document.getElementById('micBtn');
+    const handsFreeChk = document.getElementById('handsFree');
+    const statusBar = document.getElementById('statusBar');
+    const stopAudioBtn = document.getElementById('stopAudioBtn');
 
     let chatHistory = []; // {role, content} pairs for Mistral context
     let isGenerating = false;
+
+    // ── Hands-free state ──
+    const HF_VOICE = 'de-DE-KatjaNeural';
+    let isRecording = false;
+    let mediaRecorder = null;
+    let audioChunks = [];
+    let recordingPending = false;
+    let sentViaMic = false; // true when current message was sent via mic → always TTS the response
+
+    // TTS playback
+    let currentAudioEl = null;
+    let ttsPlaying = false;
+    let ttsResolve = null;
+    let playbackCtx = null; // iOS unlock only
+
+    // VAD
+    let vadAudioCtx = null;
+    let vadAnalyser = null;
+    let vadAnimFrame = null;
+    let recordStartTime = 0;
+    let speechDetected = false;
+    let silenceStart = null;
+    const SILENCE_THRESHOLD = 0.015;
+    const SILENCE_DURATION = 1800;
+    const MIN_RECORD_MS = 600;
+
+    // Mic monitoring for interrupt
+    let micMonitorCtx = null;
+    let micMonitorStream = null;
+    let micMonitorAnimFrame = null;
+    let streamAbortController = null;
 
     // ── DB info ──
     (async () => {
@@ -111,6 +176,16 @@
       }
     })();
 
+    // ── Unlock audio on first interaction (iOS) ──
+    const unlockAudio = () => {
+      if (!playbackCtx) playbackCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (playbackCtx.state === 'suspended') playbackCtx.resume();
+      document.removeEventListener('click', unlockAudio, true);
+      document.removeEventListener('keydown', unlockAudio, true);
+    };
+    document.addEventListener('click', unlockAudio, { capture: true });
+    document.addEventListener('keydown', unlockAudio, { capture: true });
+
     // ── Example questions ──
     document.querySelectorAll('.example-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -119,7 +194,7 @@
       });
     });
 
-    // ── Send message ──
+    // ── Event listeners ──
     sendBtn.onclick = () => sendMessage();
     userInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
@@ -128,9 +203,30 @@
       }
     });
 
+    micBtn.addEventListener('click', toggleRecording);
+    stopAudioBtn.addEventListener('click', stopAudio);
+
+    // Space bar = toggle recording / interrupt
+    document.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'INPUT') {
+        e.preventDefault();
+        toggleRecording();
+      }
+    });
+
+    // ── Status helper ──
+    function setStatus(text) {
+      statusBar.textContent = text;
+      statusBar.style.display = text ? '' : 'none';
+    }
+
+    // ── Send message ──
     async function sendMessage() {
       const text = userInput.value.trim();
       if (!text || isGenerating) return;
+
+      const useTTS = handsFreeChk.checked || sentViaMic;
+      sentViaMic = false;
 
       welcomeMsg.style.display = 'none';
       isGenerating = true;
@@ -148,9 +244,9 @@
 
       try {
         if (streamingChk.checked) {
-          await streamChat(text, contentDiv, sourcesDiv);
+          await streamChat(text, contentDiv, sourcesDiv, useTTS);
         } else {
-          await plainChat(text, contentDiv, sourcesDiv);
+          await plainChat(text, contentDiv, sourcesDiv, useTTS);
         }
       } catch (e) {
         contentDiv.innerHTML = '<span class="error-text">Fehler: ' + escapeHtml(e.message) + '</span>';
@@ -159,9 +255,16 @@
       isGenerating = false;
       sendBtn.disabled = false;
       userInput.focus();
+
+      // Hands-free: auto-listen after TTS finishes
+      if (handsFreeChk.checked && !isRecording && !recordingPending) {
+        setTimeout(() => {
+          if (!isGenerating && !isRecording && !recordingPending && !ttsPlaying) toggleRecording();
+        }, 400);
+      }
     }
 
-    async function plainChat(text, contentDiv, sourcesDiv) {
+    async function plainChat(text, contentDiv, sourcesDiv, useTTS) {
       const r = await fetch(BASE_PATH + '/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -177,19 +280,32 @@
       chatHistory.push({ role: 'assistant', content: data.answer });
       renderSources(sourcesDiv, data.sources, data.webSources, data.mode);
       scrollToBottom();
+
+      // TTS the full answer
+      if (useTTS) {
+        await ttsFullAnswer(data.answer);
+      }
     }
 
-    async function streamChat(text, contentDiv, sourcesDiv) {
+    async function streamChat(text, contentDiv, sourcesDiv, useTTS) {
+      streamAbortController = new AbortController();
+      const signal = streamAbortController.signal;
       const historyParam = encodeURIComponent(JSON.stringify(chatHistory));
       const qs = `message=${encodeURIComponent(text)}&history=${historyParam}`;
-      const r = await fetch(BASE_PATH + '/chat_stream?' + qs);
+      const r = await fetch(BASE_PATH + '/chat_stream?' + qs, { signal });
       const reader = r.body.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
       let fullText = '';
       let sourcesRendered = false;
 
+      // TTS: sentence extraction during streaming
+      let lastSpokenIdx = 0;
+      const ttsQueue = []; // Promise<Blob|null>[]
+      let ttsIdx = 0;
+
       while (true) {
+        if (signal.aborted) break;
         const { value, done } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
@@ -206,23 +322,39 @@
             chatHistory.push({ role: 'user', content: text });
             chatHistory.push({ role: 'assistant', content: fullText });
             scrollToBottom();
+
+            // Queue remaining un-spoken text for TTS
+            if (useTTS && lastSpokenIdx < fullText.length) {
+              const remaining = stripForTTS(fullText.slice(lastSpokenIdx)).trim();
+              if (remaining) {
+                const chunks = splitForTTS(remaining);
+                for (const chunk of chunks) ttsQueue.push(prefetchTTSBlob(chunk, HF_VOICE));
+              }
+            }
+            // Play remaining TTS
+            while (ttsIdx < ttsQueue.length && !signal.aborted && !isRecording) {
+              setStatus('🔊 Spricht...');
+              const blob = await ttsQueue[ttsIdx++];
+              if (blob) await playAudioBlob(blob);
+            }
+            setStatus('');
+            streamAbortController = null;
             return;
           }
 
           if (payload.startsWith('ERROR:')) {
             contentDiv.innerHTML = '<span class="error-text">' + escapeHtml(payload) + '</span>';
+            streamAbortController = null;
             return;
           }
 
           try {
             const obj = JSON.parse(payload);
-            // Sources message
             if (obj.type === 'sources') {
               renderSources(sourcesDiv, obj.sources, obj.webSources, obj.mode);
               sourcesRendered = true;
               continue;
             }
-            // Text content
             fullText = obj;
           } catch {
             fullText = payload;
@@ -230,8 +362,342 @@
 
           contentDiv.innerHTML = formatMarkdown(fullText) + '<span class="cursor">▊</span>';
           scrollToBottom();
+
+          // Extract new complete sentences for TTS (split on .!?;: followed by space, or double newlines)
+          if (useTTS && fullText.length > lastSpokenIdx) {
+            const newText = fullText.slice(lastSpokenIdx);
+            // Find last sentence boundary: punctuation+space or paragraph break
+            const boundaryRe = /[.!?]\s|\n\n/g;
+            let lastBoundary = -1;
+            let match;
+            while ((match = boundaryRe.exec(newText)) !== null) {
+              lastBoundary = match.index + match[0].length;
+            }
+            if (lastBoundary > 0) {
+              const sentence = stripForTTS(newText.slice(0, lastBoundary)).trim();
+              if (sentence) {
+                ttsQueue.push(prefetchTTSBlob(sentence, HF_VOICE));
+                lastSpokenIdx += lastBoundary;
+              }
+            }
+          }
+        }
+
+        // Play pending TTS in order (prefetches may already be resolved)
+        while (useTTS && ttsIdx < ttsQueue.length && !signal.aborted && !isRecording) {
+          setStatus('🔊 Spricht...');
+          const blob = await ttsQueue[ttsIdx++];
+          if (blob) await playAudioBlob(blob);
         }
       }
+      streamAbortController = null;
+    }
+
+    // ── TTS text cleaning ──
+    function stripForTTS(text) {
+      return text
+        .replace(/\*\*(.+?)\*\*/g, '$1')   // bold
+        .replace(/\*(.+?)\*/g, '$1')       // italic
+        .replace(/`(.+?)`/g, '$1')         // inline code
+        .replace(/#{1,6}\s*/g, '')         // headers
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // markdown links
+        .replace(/[-*+]\s/g, '')           // list markers
+        .replace(/\n{3,}/g, '\n\n')        // excessive newlines
+        .trim();
+    }
+
+    function splitForTTS(text) {
+      // Split long text into speakable chunks (~400 chars max)
+      const parts = text.split(/\n\n+/);
+      const result = [];
+      for (const part of parts) {
+        const trimmed = part.trim();
+        if (!trimmed) continue;
+        if (trimmed.length <= 400) {
+          result.push(trimmed);
+        } else {
+          // Split long paragraphs at sentence boundaries
+          const sentences = trimmed.match(/[^.!?]+[.!?]+\s*/g) || [trimmed];
+          let chunk = '';
+          for (const s of sentences) {
+            if (chunk.length + s.length > 400 && chunk) {
+              result.push(chunk.trim());
+              chunk = '';
+            }
+            chunk += s;
+          }
+          if (chunk.trim()) result.push(chunk.trim());
+        }
+      }
+      return result.length ? result : [text.trim()];
+    }
+
+    // ── TTS for full answer (non-streaming mode) ──
+    async function ttsFullAnswer(text) {
+      if (!text) return;
+      const clean = stripForTTS(text);
+      const chunks = splitForTTS(clean);
+      const ttsQueue = chunks.map(s => prefetchTTSBlob(s, HF_VOICE));
+      for (let i = 0; i < ttsQueue.length; i++) {
+        if (isRecording) break;
+        setStatus('🔊 Spricht...');
+        const blob = await ttsQueue[i];
+        if (blob) await playAudioBlob(blob);
+      }
+      setStatus('');
+    }
+
+    // ── TTS helpers (reused from conversation page) ──
+    function prefetchTTSBlob(text, voice) {
+      return fetch(BASE_PATH + '/conversation/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, voice })
+      }).then(r => r.ok ? r.blob() : null)
+        .catch(e => { console.warn('TTS prefetch error:', e); return null; });
+    }
+
+    async function playAudioBlob(blob) {
+      if (!blob || blob.size < 100) return;
+      const blobUrl = URL.createObjectURL(blob);
+      const audio = new Audio(blobUrl);
+      await new Promise((resolve) => {
+        ttsResolve = resolve;
+        ttsPlaying = true;
+        currentAudioEl = audio;
+        stopAudioBtn.style.display = '';
+
+        const cleanup = () => {
+          stopMicMonitoring();
+          ttsPlaying = false;
+          currentAudioEl = null;
+          URL.revokeObjectURL(blobUrl);
+          stopAudioBtn.style.display = 'none';
+          if (ttsResolve) { const r = ttsResolve; ttsResolve = null; r(); }
+        };
+
+        audio.addEventListener('ended', cleanup, { once: true });
+        audio.addEventListener('error', cleanup, { once: true });
+        audio.play().catch(e => { console.warn('audio.play() failed:', e); cleanup(); });
+        setTimeout(() => { if (ttsPlaying) startMicMonitoringForInterrupt(); }, 150);
+      });
+    }
+
+    function stopAudio() {
+      stopMicMonitoring();
+      if (currentAudioEl) {
+        try { currentAudioEl.pause(); currentAudioEl.src = ''; } catch {}
+        currentAudioEl = null;
+      }
+      ttsPlaying = false;
+      stopAudioBtn.style.display = 'none';
+      if (ttsResolve) { ttsResolve(); ttsResolve = null; }
+    }
+
+    // ── Recording (STT) ──
+    async function toggleRecording() {
+      // Interrupt TTS if playing
+      if (ttsPlaying) {
+        if (streamAbortController) streamAbortController.abort();
+        stopAudio();
+        isGenerating = false;
+      }
+      if (isRecording) {
+        stopRecording();
+      } else if (!isGenerating) {
+        await startRecording();
+      }
+    }
+
+    async function startRecording() {
+      if (recordingPending || isRecording) return;
+      recordingPending = true;
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+        audioChunks = [];
+        mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
+        mediaRecorder.onstop = () => {
+          stream.getTracks().forEach(t => t.stop());
+          cleanupVAD();
+          const blob = new Blob(audioChunks, { type: 'audio/webm' });
+          if (blob.size > 1000) {
+            processAudioBlob(blob);
+          } else {
+            setStatus('⚠️ Aufnahme zu kurz');
+            setTimeout(() => setStatus(''), 2000);
+          }
+        };
+        mediaRecorder.start();
+        isRecording = true;
+        recordStartTime = Date.now();
+        speechDetected = false;
+        silenceStart = null;
+        micBtn.classList.add('recording');
+        micBtn.textContent = '⏹';
+        setStatus('🎙️ Aufnahme läuft – stoppt bei Pause');
+        startVAD(stream);
+      } catch (e) {
+        setStatus('❌ Mikrofon nicht verfügbar: ' + e.message);
+      } finally {
+        recordingPending = false;
+      }
+    }
+
+    function stopRecording() {
+      if (mediaRecorder && isRecording) {
+        mediaRecorder.stop();
+        isRecording = false;
+        micBtn.classList.remove('recording');
+        micBtn.textContent = '🎙️';
+      }
+    }
+
+    // ── VAD (auto-stop on silence) ──
+    function startVAD(stream) {
+      try {
+        vadAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const source = vadAudioCtx.createMediaStreamSource(stream);
+        vadAnalyser = vadAudioCtx.createAnalyser();
+        vadAnalyser.fftSize = 512;
+        source.connect(vadAnalyser);
+        const buf = new Float32Array(vadAnalyser.fftSize);
+
+        function tick() {
+          if (!isRecording) return;
+          vadAnalyser.getFloatTimeDomainData(buf);
+          let sum = 0;
+          for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+          const rms = Math.sqrt(sum / buf.length);
+          const elapsed = Date.now() - recordStartTime;
+
+          if (rms > SILENCE_THRESHOLD) {
+            speechDetected = true;
+            silenceStart = null;
+          } else if (speechDetected && elapsed > MIN_RECORD_MS) {
+            if (!silenceStart) silenceStart = Date.now();
+            else if (Date.now() - silenceStart > SILENCE_DURATION) {
+              setStatus('⏸️ Pause erkannt – sende …');
+              stopRecording();
+              return;
+            }
+          }
+          vadAnimFrame = requestAnimationFrame(tick);
+        }
+        tick();
+      } catch (e) {
+        console.warn('VAD init failed:', e);
+      }
+    }
+
+    function cleanupVAD() {
+      if (vadAnimFrame) { cancelAnimationFrame(vadAnimFrame); vadAnimFrame = null; }
+      if (vadAudioCtx && vadAudioCtx.state !== 'closed') vadAudioCtx.close().catch(() => {});
+      vadAudioCtx = null; vadAnalyser = null; speechDetected = false; silenceStart = null;
+    }
+
+    // ── Process recorded audio via STT ──
+    async function processAudioBlob(blob) {
+      setStatus('📝 Transkribiere...');
+      try {
+        const base64 = await blobToBase64(blob);
+        const sttResp = await fetch(BASE_PATH + '/conversation/stt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ audio: base64 })
+        });
+        const sttData = await sttResp.json();
+        if (sttData.error) throw new Error(sttData.error);
+
+        const userText = sttData.text;
+        if (!userText || !userText.trim()) {
+          setStatus('⚠️ Keine Sprache erkannt');
+          setTimeout(() => setStatus(''), 2000);
+          return;
+        }
+
+        // Put transcribed text into input and send
+        userInput.value = userText;
+        setStatus('');
+        sentViaMic = true;
+        sendMessage();
+      } catch (e) {
+        setStatus('❌ Fehler: ' + e.message);
+        setTimeout(() => setStatus(''), 3000);
+      }
+    }
+
+    // ── Mic monitoring for interrupt during TTS ──
+    function stopMicMonitoring() {
+      if (micMonitorAnimFrame) { cancelAnimationFrame(micMonitorAnimFrame); micMonitorAnimFrame = null; }
+      if (micMonitorStream) { micMonitorStream.getTracks().forEach(t => t.stop()); micMonitorStream = null; }
+      if (micMonitorCtx && micMonitorCtx.state !== 'closed') { micMonitorCtx.close().catch(() => {}); micMonitorCtx = null; }
+    }
+
+    async function startMicMonitoringForInterrupt() {
+      stopMicMonitoring();
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false }
+        });
+        if (!ttsPlaying) { stream.getTracks().forEach(t => t.stop()); return; }
+        micMonitorStream = stream;
+        micMonitorCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (micMonitorCtx.state === 'suspended') await micMonitorCtx.resume();
+        const source = micMonitorCtx.createMediaStreamSource(stream);
+        const analyser = micMonitorCtx.createAnalyser();
+        analyser.fftSize = 512;
+        source.connect(analyser);
+        const buf = new Float32Array(analyser.fftSize);
+        await new Promise(r => setTimeout(r, 800));
+        if (!ttsPlaying) { stopMicMonitoring(); return; }
+        let consecutiveFrames = 0;
+        const REQUIRED_FRAMES = 6;
+        const baselineSamples = [];
+        const baselineStart = Date.now();
+        let dynamicThreshold = null;
+        function tick() {
+          if (!ttsPlaying) { stopMicMonitoring(); return; }
+          analyser.getFloatTimeDomainData(buf);
+          let sum = 0;
+          for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+          const rms = Math.sqrt(sum / buf.length);
+          if (dynamicThreshold === null) {
+            baselineSamples.push(rms);
+            if (Date.now() - baselineStart > 500) {
+              const avg = baselineSamples.reduce((a, b) => a + b, 0) / baselineSamples.length;
+              dynamicThreshold = Math.max(0.15, Math.min(0.30, avg * 10));
+            }
+            micMonitorAnimFrame = requestAnimationFrame(tick);
+            return;
+          }
+          if (rms > dynamicThreshold) {
+            consecutiveFrames++;
+            if (consecutiveFrames >= REQUIRED_FRAMES) {
+              stopMicMonitoring();
+              if (streamAbortController) streamAbortController.abort();
+              stopAudio();
+              isGenerating = false;
+              if (!isRecording && !recordingPending) startRecording();
+              return;
+            }
+          } else {
+            consecutiveFrames = 0;
+          }
+          micMonitorAnimFrame = requestAnimationFrame(tick);
+        }
+        tick();
+      } catch (e) {
+        console.warn('Mic interrupt monitoring failed:', e.message);
+      }
+    }
+
+    function blobToBase64(blob) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result.split(',')[1]);
+        reader.readAsDataURL(blob);
+      });
     }
 
     // ── UI helpers ──
@@ -255,9 +721,10 @@
 
       let html = '';
       if (hasDoc) {
-        html += '<div class="sources-label">📎 Bildungsplan-Quellen:</div><div class="sources-list">';
+        html += '<div class="sources-label">📎 Quellen:</div><div class="sources-list">';
         for (const s of sources) {
-          html += `<span class="source-tag">${escapeHtml(s.source)} – S. ${s.page}</span>`;
+          const label = s.num ? `Quelle ${s.num}: ` : '';
+          html += `<span class="source-tag">${label}${escapeHtml(s.source)} – S. ${s.page}</span>`;
         }
         html += '</div>';
       }
@@ -283,7 +750,6 @@
 
     function formatMarkdown(text) {
       if (!text) return '';
-      // Basic markdown: bold, italic, code, line breaks
       return text
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -300,6 +766,8 @@
       chatArea.innerHTML = '';
       chatArea.appendChild(welcomeMsg);
       welcomeMsg.style.display = '';
+      stopAudio();
+      setStatus('');
     };
 
     // ── Settings modal ──

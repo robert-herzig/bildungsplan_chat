@@ -16,11 +16,11 @@ app.use(express.json({ limit: "25mb" }));
 // ── Config ──────────────────────────────────────────────────────────
 const API_BASE = process.env.MISTRAL_API_BASE || "https://api.mistral.ai/v1";
 const API_KEY = process.env.MISTRAL_API_KEY;
-const MODEL = process.env.MISTRAL_MODEL || "mistral-small-latest";
+const MODEL = process.env.MISTRAL_MODEL || "mistral-medium-latest";
 const CHROMA_DB_PATH = process.env.CHROMA_DB_PATH || "./chroma_db";
 const COLLECTION_NAME = "bildungsplan";
 const TOP_K = parseInt(process.env.TOP_K || "8", 10);
-const MIN_RELEVANCE_SCORE = parseFloat(process.env.MIN_RELEVANCE_SCORE || "0.79");
+const MIN_RELEVANCE_SCORE = parseFloat(process.env.MIN_RELEVANCE_SCORE || "0.68");
 const PORT = parseInt(process.env.PORT || "5001", 10);
 const HOST = process.env.HOST || "127.0.0.1";
 const TIMEOUT = parseInt(process.env.MODEL_TIMEOUT || "120", 10) * 1000;
@@ -30,17 +30,9 @@ const CUSTOM_PRESETS_PATH = path.join(__dirname, "conversation_presets_custom.js
 const TMP_DIR = "/tmp";
 
 const SYSTEM_PROMPT_PATH = path.join(__dirname, "system_prompt.txt");
-const DEFAULT_SYSTEM_PROMPT = `Du bist ein hilfreicher Assistent für Lehrkräfte an einem SBBZ (Sonderpädagogisches Bildungs- und Beratungszentrum) in Baden-Württemberg, Förderschwerpunkt Geistige Entwicklung (GENT).
+const DEFAULT_SYSTEM_PROMPT = `Du bist ein hilfreicher Assistent für Lehrkräfte an einem SBBZ in Baden-Württemberg, Förderschwerpunkt Geistige Entwicklung (GENT).
 
-Du hast Zugriff auf Auszüge aus dem Bildungsplan 2022 für den Förderschwerpunkt GENT. Nutze diese Informationen, um die Fragen der Lehrkraft präzise und hilfreich zu beantworten.
-
-Wichtige Regeln:
-- Antworte immer auf Deutsch.
-- Beziehe dich auf die bereitgestellten Quellen, wenn möglich.
-- Nenne die Quelle (Dokument und Seite), wenn du dich auf spezifische Inhalte beziehst.
-- Wenn die bereitgestellten Quellen die Frage nicht beantworten können, sage das ehrlich.
-- Sei praxisorientiert und gib konkrete, umsetzbare Hinweise für den Unterricht.
-- Verwende eine professionelle, aber zugängliche Sprache.`;
+Antworte immer auf Deutsch, kurz und prägnant (maximal 2-3 kurze Absätze). Kein Markdown, keine Aufzählungen – nur Fließtext. Quellenangaben als "(Quelle 1, S. X)" im Text, keine Dateinamen.`;
 
 // ── Static files & HTML ─────────────────────────────────────────────
 app.use("/static", express.static(path.join(__dirname, "static")));
@@ -109,9 +101,27 @@ async function searchWeb(query, maxResults = 4) {
   });
 }
 
-function formatDocContext(chunks) {
+/** Build numbered source list from chunks (deduped by source+page) */
+function buildNumberedSources(chunks) {
+  const sources = [];
+  const seen = new Map();
+  for (const c of chunks) {
+    const key = c.source + "::" + c.page;
+    if (!seen.has(key)) {
+      seen.set(key, sources.length + 1);
+      sources.push({ num: sources.length + 1, source: c.source, page: c.page });
+    }
+  }
+  return { sources, keyToNum: seen };
+}
+
+function formatDocContext(chunks, keyToNum) {
   return chunks
-    .map((c) => `[Quelle: ${c.source}, Seite ${c.page}]\n${c.text}`)
+    .map((c) => {
+      const key = c.source + "::" + c.page;
+      const num = keyToNum.get(key);
+      return `[Quelle ${num}, S. ${c.page}]\n${c.text}`;
+    })
     .join("\n\n---\n\n");
 }
 
@@ -122,40 +132,101 @@ function formatWebResults(results) {
 }
 
 /**
+ * Use a fast LLM call to reformulate the user message into an optimal search query
+ * for the document database. This bridges the gap between conversational speech
+ * and the embedding-friendly keyword phrases that score well against ChromaDB.
+ */
+async function reformulateSearchQuery(userMessage) {
+  try {
+    const resp = await fetch(API_BASE + "/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + API_KEY },
+      body: JSON.stringify({
+        model: "mistral-small-latest",
+        messages: [
+          {
+            role: "system",
+            content: `Du bist ein Suchquery-Optimierer. Deine Aufgabe: Formuliere die Nutzerfrage in eine präzise deutsche Suchanfrage um, die optimal für eine Vektordatenbank-Suche in Bildungsplan-Dokumenten (SBBZ GENT Baden-Württemberg) und ILEB-Dokumenten geeignet ist.
+
+Regeln:
+- Extrahiere die Kernbegriffe und Fachbegriffe
+- Entferne Füllwörter und Konversationsfloskeln
+- Gib NUR die optimierte Suchanfrage zurück, NICHTS anderes
+- Maximal 15 Wörter
+- Wenn die Frage Abkürzungen enthält (z.B. ILEB, SBBZ), löse sie auf UND behalte die Abkürzung
+
+Beispiele:
+Nutzerfrage: "Erzähl mir mal was über ILEB"
+Suchanfrage: ILEB Individuelle Lern- und Entwicklungsbegleitung Förderplanung
+
+Nutzerfrage: "Was muss ich im Fach Deutsch beachten?"
+Suchanfrage: Bildungsplan Deutsch Kompetenzen Anforderungen GENT
+
+Nutzerfrage: "Wie fülle ich das ILEB Formular aus?"
+Suchanfrage: ILEB Formular Förderplanung Dokumentation Bildungsplanung ausfüllen`,
+          },
+          { role: "user", content: userMessage },
+        ],
+        max_tokens: 60,
+        temperature: 0.1,
+      }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!resp.ok) return userMessage;
+    const data = await resp.json();
+    const query = data.choices?.[0]?.message?.content?.trim();
+    if (query && query.length > 3 && query.length < 200) {
+      console.log(`  🔍 Reformulated: "${userMessage.slice(0, 50)}" → "${query}"`);
+      return query;
+    }
+    return userMessage;
+  } catch (e) {
+    console.warn("Query reformulation failed, using raw query:", e.message);
+    return userMessage;
+  }
+}
+
+/**
  * Central context builder.
- * Returns { contextText, chunks, webResults, mode }
+ * Returns { contextText, chunks, sources, webResults, mode }
  * mode: 'docs' | 'web' | 'none'
  */
 async function buildContext(message) {
   if (isConversational(message)) {
-    return { contextText: "", chunks: [], webResults: [], mode: "none" };
+    return { contextText: "", chunks: [], sources: [], webResults: [], mode: "none" };
   }
 
-  // 1. Try document search
-  const allChunks = await queryChromaDB(message, TOP_K);
+  // 1. Reformulate user message into an optimal search query
+  const searchQuery = await reformulateSearchQuery(message);
+
+  // 2. Try document search with the reformulated query
+  const allChunks = await queryChromaDB(searchQuery, TOP_K);
   const chunks = allChunks.filter((c) => c.score >= MIN_RELEVANCE_SCORE);
 
   if (chunks.length > 0) {
+    const { sources, keyToNum } = buildNumberedSources(chunks);
     return {
-      contextText: `Relevante Auszüge aus dem Bildungsplan GENT:\n\n${formatDocContext(chunks)}`,
+      contextText: `Relevante Auszüge aus dem Bildungsplan GENT:\n\n${formatDocContext(chunks, keyToNum)}`,
       chunks,
+      sources,
       webResults: [],
       mode: "docs",
     };
   }
 
-  // 2. Fallback: web search
-  const webResults = await searchWeb(message, 4);
+  // 3. Fallback: web search (also with the reformulated query)
+  const webResults = await searchWeb(searchQuery, 4);
   if (webResults.length > 0) {
     return {
       contextText: `Ergebnisse aus der Websuche:\n\n${formatWebResults(webResults)}`,
       chunks: [],
+      sources: [],
       webResults,
       mode: "web",
     };
   }
 
-  return { contextText: "", chunks: [], webResults: [], mode: "none" };
+  return { contextText: "", chunks: [], sources: [], webResults: [], mode: "none" };
 }
 
 // ── API endpoints ───────────────────────────────────────────────────
@@ -184,7 +255,7 @@ app.post("/chat", async (req, res) => {
 
   try {
     // 1. Build context (docs → web → none)
-    const { contextText, chunks, webResults, mode } = await buildContext(message);
+    const { contextText, sources, webResults, mode } = await buildContext(message);
 
     // 2. Build messages
     const systemPrompt = await readSystemPrompt();
@@ -215,13 +286,6 @@ app.post("/chat", async (req, res) => {
     const data = await resp.json();
     const answer = data.choices[0].message.content;
 
-    // 4. Prepare sources
-    const sources = [];
-    const seen = new Set();
-    for (const c of chunks) {
-      const key = c.source + "::" + c.page;
-      if (!seen.has(key)) { seen.add(key); sources.push({ source: c.source, page: c.page }); }
-    }
     const webSources = webResults.map((r) => ({ title: r.title, url: r.url }));
 
     res.json({ answer, sources, webSources, mode });
@@ -253,15 +317,9 @@ app.get("/chat_stream", async (req, res) => {
 
   try {
     // 1. Build context (docs → web → none)
-    const { contextText, chunks, webResults, mode } = await buildContext(message);
+    const { contextText, sources, webResults, mode } = await buildContext(message);
 
     // Send sources first so the UI can show them while streaming
-    const sources = [];
-    const seen = new Set();
-    for (const c of chunks) {
-      const key = c.source + "::" + c.page;
-      if (!seen.has(key)) { seen.add(key); sources.push({ source: c.source, page: c.page }); }
-    }
     const webSources = webResults.map((r) => ({ title: r.title, url: r.url }));
     res.write("data: " + JSON.stringify({ type: "sources", sources, webSources, mode }) + "\n\n");
 

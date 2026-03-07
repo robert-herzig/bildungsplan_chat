@@ -76,12 +76,6 @@ pm2 describe "$APP_NAME" > /dev/null 2>&1 && {
     cd "$DEPLOY_DIR"
     pm2 start ecosystem.config.js --only "$APP_NAME"
 }
-pm2 describe "piper_tts" > /dev/null 2>&1 && {
-    pm2 restart "piper_tts"
-} || {
-    cd "$DEPLOY_DIR"
-    pm2 start ecosystem.config.js --only "piper_tts"
-}
 pm2 save
 
 echo ""
