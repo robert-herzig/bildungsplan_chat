@@ -760,10 +760,17 @@ function stopMicMonitoring() {
 }
 
 async function startMicMonitoringForInterrupt() {
+  // Clean up any previous monitor to prevent resource leaks
+  stopMicMonitoring();
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false }
     });
+    // If audio already finished during getUserMedia, clean up immediately
+    if (!currentAudio) {
+      stream.getTracks().forEach(t => t.stop());
+      return;
+    }
     micMonitorStream = stream;
     micMonitorCtx = new (window.AudioContext || window.webkitAudioContext)();
     const source = micMonitorCtx.createMediaStreamSource(stream);
@@ -772,9 +779,15 @@ async function startMicMonitoringForInterrupt() {
     source.connect(analyser);
     const buf = new Float32Array(analyser.fftSize);
     // Wait briefly so TTS audio startup doesn't self-trigger
-    await new Promise(r => setTimeout(r, 400));
+    await new Promise(r => setTimeout(r, 300));
+    // Check again after delay – audio might have ended
+    if (!currentAudio) { stopMicMonitoring(); return; }
     function tick() {
-      if (!currentAudio) return; // TTS ended normally – stop monitoring
+      if (!currentAudio) {
+        // TTS ended normally – clean up monitor resources
+        stopMicMonitoring();
+        return;
+      }
       analyser.getFloatTimeDomainData(buf);
       let sum = 0;
       for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
