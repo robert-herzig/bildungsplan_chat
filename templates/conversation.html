@@ -144,9 +144,10 @@ let mediaRecorder = null;
 let audioChunks = [];
 let busy = false;
 
-// TTS playback via Web Audio API (bypasses Brave/desktop autoplay policy)
-let playbackCtx = null;      // shared AudioContext for TTS
-let currentSource = null;    // AudioBufferSourceNode currently playing
+// TTS playback: HTMLAudioElement routed through unlocked AudioContext
+// → bypasses Brave/desktop autoplay policy AND plays immediately (no decode delay)
+let playbackCtx = null;      // shared AudioContext, unlocked on first user gesture
+let currentAudioEl = null;   // HTMLAudioElement currently playing TTS
 let ttsPlaying = false;      // true while TTS audio is playing
 let ttsResolve = null;       // resolves the per-sentence playback promise
 
@@ -573,48 +574,52 @@ async function playTTS(text, voice) {
     if (audioBlob.size < 100) { console.warn('TTS blob too small'); return; }
     if (isRecording) return;
 
-    // Ensure AudioContext exists and is running
+    // Ensure AudioContext is unlocked (created + resumed on first user gesture)
     if (!playbackCtx) playbackCtx = new (window.AudioContext || window.webkitAudioContext)();
     if (playbackCtx.state === 'suspended') await playbackCtx.resume();
 
-    const arrayBuffer = await audioBlob.arrayBuffer();
-    const audioBuffer = await playbackCtx.decodeAudioData(arrayBuffer);
+    // Use HTMLAudioElement for immediate progressive playback (no full-decode delay),
+    // but route it through the already-unlocked AudioContext so Brave desktop allows it.
+    const blobUrl = URL.createObjectURL(audioBlob);
+    const audio = new Audio(blobUrl);
+    const mediaNode = playbackCtx.createMediaElementSource(audio);
+    mediaNode.connect(playbackCtx.destination);
 
-    if (isRecording) return; // user may have started speaking during decode
+    if (isRecording) { URL.revokeObjectURL(blobUrl); return; }
 
     await new Promise((resolve) => {
       ttsResolve = resolve;
       ttsPlaying = true;
-      currentSource = playbackCtx.createBufferSource();
-      currentSource.buffer = audioBuffer;
-      currentSource.connect(playbackCtx.destination);
+      currentAudioEl = audio;
       document.getElementById('stopAudioBtn').classList.remove('hidden');
 
       const cleanup = () => {
         stopMicMonitoring();
         ttsPlaying = false;
-        currentSource = null;
+        currentAudioEl = null;
+        URL.revokeObjectURL(blobUrl);
         document.getElementById('stopAudioBtn').classList.add('hidden');
         if (ttsResolve) { const r = ttsResolve; ttsResolve = null; r(); }
       };
 
-      currentSource.onended = cleanup;
-      currentSource.start(0);
+      audio.addEventListener('ended', cleanup, { once: true });
+      audio.addEventListener('error', cleanup, { once: true });
+      audio.play().catch(e => { console.warn('TTS play() rejected:', e); cleanup(); });
       startMicMonitoringForInterrupt();
     });
   } catch (e) {
     console.warn('TTS error:', e);
     ttsPlaying = false;
-    currentSource = null;
+    currentAudioEl = null;
     if (ttsResolve) { const r = ttsResolve; ttsResolve = null; r(); }
   }
 }
 
 function stopAudio() {
   stopMicMonitoring();
-  if (currentSource) {
-    try { currentSource.stop(); } catch {}
-    currentSource = null;
+  if (currentAudioEl) {
+    try { currentAudioEl.pause(); currentAudioEl.src = ''; } catch {}
+    currentAudioEl = null;
   }
   ttsPlaying = false;
   document.getElementById('stopAudioBtn').classList.add('hidden');
@@ -766,6 +771,7 @@ async function startMicMonitoringForInterrupt() {
     }
     micMonitorStream = stream;
     micMonitorCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (micMonitorCtx.state === 'suspended') await micMonitorCtx.resume();
     const source = micMonitorCtx.createMediaStreamSource(stream);
     const analyser = micMonitorCtx.createAnalyser();
     analyser.fftSize = 512;
