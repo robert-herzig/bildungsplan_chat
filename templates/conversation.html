@@ -48,9 +48,10 @@
           <h2>Gesprächssimulation</h2>
           <p>Wähle oben ein Elternteil aus und starte das Gespräch. Du übst als Lehrkraft, das Elternteil wird von der KI gespielt.</p>
           <div class="feature-list">
-            <div class="feature">🎙️ <strong>Sprechen</strong> — Klicke den Mikrofon-Button oder drücke <kbd>Leertaste</kbd></div>
+            <div class="feature">🎙️ <strong>Sprechen</strong> — Klicke 🎙️ oder <kbd>Leertaste</kbd> – stoppt automatisch bei Pause</div>
             <div class="feature">⌨️ <strong>Tippen</strong> — Oder schreibe deine Antwort im Textfeld</div>
             <div class="feature">🔊 <strong>Anhören</strong> — Das Elternteil antwortet per Sprache</div>
+            <div class="feature">✋ <strong>Unterbrechen</strong> — Drücke 🎙️ oder <kbd>Leertaste</kbd> während das Elternteil spricht</div>
           </div>
         </div>
       </div>
@@ -144,10 +145,35 @@ let audioChunks = [];
 let currentAudio = null;
 let busy = false;
 
+// TTS interrupt support
+let ttsResolve = null;
+
+// VAD (Voice Activity Detection) – auto-stop recording on silence
+let vadAudioCtx = null;
+let vadAnalyser = null;
+let vadAnimFrame = null;
+let recordStartTime = 0;
+let speechDetected = false;
+let silenceStart = null;
+const SILENCE_THRESHOLD = 0.015;  // RMS below this = silence
+const SILENCE_DURATION = 1800;    // ms of silence after speech → auto-stop
+const MIN_RECORD_MS = 600;        // min recording time before VAD kicks in
+
 // ── Init ──────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   await loadPresets();
   setupEventListeners();
+
+  // Unlock audio on first user interaction (Brave / strict autoplay browsers)
+  const unlockAudio = () => {
+    const a = new Audio('data:audio/wav;base64,UklGRigAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQQAAAAAAA==');
+    a.volume = 0;
+    a.play().then(() => a.pause()).catch(() => {});
+    document.removeEventListener('click', unlockAudio, true);
+    document.removeEventListener('keydown', unlockAudio, true);
+  };
+  document.addEventListener('click', unlockAudio, { capture: true });
+  document.addEventListener('keydown', unlockAudio, { capture: true });
 });
 
 async function loadPresets() {
@@ -186,11 +212,11 @@ function setupEventListeners() {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendTextMessage(); }
   });
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts (space = toggle recording / interrupt TTS)
   document.addEventListener('keydown', (e) => {
     if (e.code === 'Space' && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'INPUT') {
       e.preventDefault();
-      if (!busy && currentPreset) toggleRecording();
+      if (currentPreset) toggleRecording();
     }
   });
 
@@ -273,7 +299,7 @@ async function startParentGreeting() {
   } finally {
     setBusy(false);
     // Auto-listen after parent speaks
-    if (document.getElementById('autoListen').checked && document.getElementById('autoTTS').checked) {
+    if (document.getElementById('autoListen').checked) {
       setTimeout(() => { if (!busy && !isRecording) toggleRecording(); }, 500);
     }
   }
@@ -281,15 +307,20 @@ async function startParentGreeting() {
 
 // ── Recording ─────────────────────────────────────────────────
 async function toggleRecording() {
+  // Interrupt: if TTS is playing, stop it and allow recording
+  if (currentAudio) {
+    stopAudio();
+    busy = false;
+  }
   if (isRecording) {
     stopRecording();
-  } else {
+  } else if (!busy) {
     await startRecording();
   }
 }
 
 async function startRecording() {
-  if (busy || !currentPreset) return;
+  if (!currentPreset) return;
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
@@ -297,14 +328,23 @@ async function startRecording() {
     mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) audioChunks.push(e.data); };
     mediaRecorder.onstop = () => {
       stream.getTracks().forEach(t => t.stop());
+      cleanupVAD();
       const blob = new Blob(audioChunks, { type: 'audio/webm' });
-      processAudioBlob(blob);
+      if (blob.size > 1000) {
+        processAudioBlob(blob);
+      } else {
+        setStatus('⚠️ Aufnahme zu kurz – versuche es nochmal.');
+      }
     };
     mediaRecorder.start();
     isRecording = true;
+    recordStartTime = Date.now();
+    speechDetected = false;
+    silenceStart = null;
     document.getElementById('micBtn').classList.add('recording');
     document.getElementById('micBtn').textContent = '⏹';
-    setStatus('🎙️ Aufnahme läuft... (nochmal klicken zum Beenden)');
+    setStatus('🎙️ Aufnahme läuft – stoppt automatisch bei Pause');
+    startVAD(stream);
   } catch (e) {
     setStatus('❌ Mikrofon nicht verfügbar: ' + e.message);
   }
@@ -317,6 +357,54 @@ function stopRecording() {
     document.getElementById('micBtn').classList.remove('recording');
     document.getElementById('micBtn').textContent = '🎙️';
   }
+}
+
+// ── Voice Activity Detection (auto-stop on silence) ──────────
+function startVAD(stream) {
+  try {
+    vadAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const source = vadAudioCtx.createMediaStreamSource(stream);
+    vadAnalyser = vadAudioCtx.createAnalyser();
+    vadAnalyser.fftSize = 512;
+    source.connect(vadAnalyser);
+    const buf = new Float32Array(vadAnalyser.fftSize);
+
+    function tick() {
+      if (!isRecording) return;
+      vadAnalyser.getFloatTimeDomainData(buf);
+      let sum = 0;
+      for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+      const rms = Math.sqrt(sum / buf.length);
+      const elapsed = Date.now() - recordStartTime;
+
+      if (rms > SILENCE_THRESHOLD) {
+        speechDetected = true;
+        silenceStart = null;
+      } else if (speechDetected && elapsed > MIN_RECORD_MS) {
+        if (!silenceStart) silenceStart = Date.now();
+        else if (Date.now() - silenceStart > SILENCE_DURATION) {
+          setStatus('⏸️ Pause erkannt – sende …');
+          stopRecording();
+          return;
+        }
+      }
+      vadAnimFrame = requestAnimationFrame(tick);
+    }
+    tick();
+  } catch (e) {
+    console.warn('VAD init failed:', e);
+  }
+}
+
+function cleanupVAD() {
+  if (vadAnimFrame) { cancelAnimationFrame(vadAnimFrame); vadAnimFrame = null; }
+  if (vadAudioCtx && vadAudioCtx.state !== 'closed') {
+    vadAudioCtx.close().catch(() => {});
+  }
+  vadAudioCtx = null;
+  vadAnalyser = null;
+  speechDetected = false;
+  silenceStart = null;
 }
 
 async function processAudioBlob(blob) {
@@ -402,7 +490,7 @@ async function getParentResponse(userText) {
   } finally {
     setBusy(false);
     // Auto-listen after parent speaks
-    if (document.getElementById('autoListen').checked && document.getElementById('autoTTS').checked) {
+    if (document.getElementById('autoListen').checked) {
       setTimeout(() => { if (!busy && !isRecording) toggleRecording(); }, 500);
     }
   }
@@ -417,27 +505,46 @@ async function playTTS(text, voice) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, voice })
       });
-      if (!resp.ok) { resolve(); return; }
+      if (!resp.ok) {
+        console.warn('TTS response not ok:', resp.status);
+        resolve(); return;
+      }
 
       const audioBlob = await resp.blob();
+      if (audioBlob.size < 100) { resolve(); return; }
+
+      // If user already started recording (interrupt), skip playback
+      if (isRecording) { resolve(); return; }
+
       const url = URL.createObjectURL(audioBlob);
       currentAudio = new Audio(url);
+      ttsResolve = resolve;
       document.getElementById('stopAudioBtn').classList.remove('hidden');
 
-      currentAudio.onended = () => {
+      const cleanup = () => {
         document.getElementById('stopAudioBtn').classList.add('hidden');
         URL.revokeObjectURL(url);
         currentAudio = null;
-        resolve();
+        if (ttsResolve) { ttsResolve(); ttsResolve = null; }
       };
-      currentAudio.onerror = () => {
-        document.getElementById('stopAudioBtn').classList.add('hidden');
-        currentAudio = null;
-        resolve();
+
+      currentAudio.onended = cleanup;
+      currentAudio.onerror = (err) => {
+        console.warn('Audio playback error:', err);
+        cleanup();
       };
-      currentAudio.play();
+
+      try {
+        await currentAudio.play();
+        // Audio is now playing – will resolve via onended or stopAudio
+      } catch (playErr) {
+        console.warn('Audio play() blocked by browser:', playErr.name, playErr.message);
+        cleanup();
+      }
     } catch (e) {
-      resolve();
+      console.warn('TTS error:', e);
+      if (ttsResolve) { ttsResolve(); ttsResolve = null; }
+      else resolve();
     }
   });
 }
@@ -445,9 +552,12 @@ async function playTTS(text, voice) {
 function stopAudio() {
   if (currentAudio) {
     currentAudio.pause();
+    currentAudio.currentTime = 0;
     currentAudio = null;
   }
   document.getElementById('stopAudioBtn').classList.add('hidden');
+  // Resolve any pending TTS promise (so getParentResponse continues)
+  if (ttsResolve) { ttsResolve(); ttsResolve = null; }
 }
 
 // ── Transcript UI ─────────────────────────────────────────────
@@ -559,7 +669,8 @@ function setInputEnabled(enabled) {
 
 function setBusy(b) {
   busy = b;
-  document.getElementById('micBtn').disabled = b || !currentPreset;
+  // Mic stays enabled so user can interrupt TTS playback
+  document.getElementById('micBtn').disabled = !currentPreset;
   document.getElementById('sendTextBtn').disabled = b || !currentPreset;
   document.getElementById('textInput').disabled = b || !currentPreset;
 }
