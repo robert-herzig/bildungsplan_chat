@@ -1,20 +1,28 @@
+/* ── Bildungsplan GENT Assistent – Style ──────────────────── */
+/* EulenAI Design: White / Black / Gold, sharp edges          */
+
 :root {
-    --bg: #0f172a;
-    --card: #111827;
-    --text: #e5e7eb;
-    --muted: #9ca3af;
-    --accent: #4f46e5;
-    --accent2: #14b8a6;
-    --user-bg: #1e293b;
-    --assistant-bg: #111827;
+    --bg: #FAFAFA;
+    --card: #FFFFFF;
+    --text: #111111;
+    --muted: #888888;
+    --accent: #C9A84C;
+    --accent2: #8B6914;
+    --user-bg: #F7F2E4;
+    --assistant-bg: #F5F5F5;
+    --border: #E0E0E0;
+    --border-dark: #CCCCCC;
+    --gold-light: #F7F2E4;
+    --near-black: #1A1A1A;
+    --danger: #CC0000;
 }
 
 * { box-sizing: border-box; }
 
 body {
     margin: 0;
-    font-family: Arial, Helvetica, sans-serif;
-    background: linear-gradient(180deg, #0b1224 0%, #0f172a 100%);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
     color: var(--text);
     height: 100vh;
     display: flex;
@@ -28,17 +36,61 @@ button, input, textarea, select {
 .container {
     max-width: 960px;
     margin: 0 auto;
-    padding: 16px 24px;
+    padding: 0 24px 16px;
     display: flex;
     flex-direction: column;
     height: 100vh;
     width: 100%;
 }
 
+/* ── Site-wide top bar ──────────────────────────────── */
+.site-topbar {
+    background: var(--near-black);
+    padding: 10px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 3px solid var(--accent);
+    flex-shrink: 0;
+}
+
+.site-topbar a {
+    color: #CCCCCC;
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: color 0.2s;
+}
+
+.site-topbar a:hover { color: var(--accent); }
+
+.site-topbar .brand {
+    color: #FFFFFF;
+    font-weight: 700;
+    font-size: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.site-topbar .brand img {
+    width: 24px;
+    height: 24px;
+    object-fit: contain;
+}
+
+.site-topbar .brand .gold { color: var(--accent); }
+
+.site-topbar-nav {
+    display: flex;
+    gap: 16px;
+}
+
 /* ── Header ─────────────────────────────────────────── */
 .hero {
     flex-shrink: 0;
     margin-bottom: 8px;
+    padding-top: 16px;
 }
 
 .hero-top {
@@ -51,6 +103,7 @@ button, input, textarea, select {
 .hero-title h1 {
     font-size: clamp(1.2rem, 3vw, 1.8rem);
     margin: 0 0 4px;
+    font-weight: 700;
 }
 
 .subtitle {
@@ -61,45 +114,57 @@ button, input, textarea, select {
 
 .hero-actions {
     display: flex;
-    gap: 8px;
+    gap: 6px;
     flex-shrink: 0;
 }
 
 .icon-btn {
-    border: 1px solid #334155;
-    background: #0b1224;
+    border: 1px solid var(--border);
+    background: var(--card);
     color: var(--text);
     padding: 8px 12px;
-    border-radius: 50%;
+    border-radius: 2px;
     cursor: pointer;
     line-height: 1;
     font-size: 1.1rem;
-    transition: background 0.2s;
+    transition: border-color 0.2s, background 0.2s;
+    text-decoration: none;
 }
 
 .icon-btn:hover {
-    background: #1e293b;
+    border-color: var(--accent);
+    background: var(--gold-light);
 }
 
 .db-info {
     font-size: 0.85rem;
     color: var(--muted);
     padding: 8px 12px;
-    background: rgba(255,255,255,0.03);
-    border-radius: 8px;
+    background: var(--card);
+    border: 1px solid var(--border);
     margin-top: 8px;
 }
 
 .db-info.warning {
-    color: #fbbf24;
-    background: rgba(251,191,36,0.08);
+    color: #B8860B;
+    background: #FFF8E7;
+    border-color: #E8D5A0;
 }
 
 .db-info code {
-    background: #1e293b;
+    background: var(--gold-light);
     padding: 2px 6px;
-    border-radius: 4px;
     font-size: 0.8rem;
+    border: 1px solid var(--border);
+}
+
+/* ── Main content area ─────────────────────────────── */
+main {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 /* ── Chat area ──────────────────────────────────────── */
@@ -146,11 +211,11 @@ button, input, textarea, select {
 }
 
 .example-btn {
-    border: 1px solid #334155;
-    background: #0b1224;
+    border: 1px solid var(--border);
+    background: var(--card);
     color: var(--accent2);
     padding: 8px 16px;
-    border-radius: 999px;
+    border-radius: 2px;
     cursor: pointer;
     font-size: 0.85rem;
     transition: all 0.2s;
@@ -158,33 +223,36 @@ button, input, textarea, select {
 }
 
 .example-btn:hover {
-    background: #1e293b;
-    border-color: var(--accent2);
+    background: var(--gold-light);
+    border-color: var(--accent);
+    color: var(--accent2);
 }
 
 /* ── Chat bubbles ───────────────────────────────────── */
 .chat-bubble {
     margin: 8px 0;
     padding: 12px 16px;
-    border-radius: 12px;
+    border-radius: 2px;
     line-height: 1.6;
 }
 
 .chat-bubble.user {
     background: var(--user-bg);
-    border: 1px solid #334155;
+    border: 1px solid #E8D5A0;
 }
 
 .chat-bubble.assistant {
     background: var(--assistant-bg);
-    border: 1px solid #1f2937;
+    border: 1px solid var(--border);
 }
 
 .bubble-role {
     font-size: 0.8rem;
-    font-weight: 600;
+    font-weight: 700;
     color: var(--muted);
     margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
 }
 
 .bubble-content {
@@ -192,9 +260,9 @@ button, input, textarea, select {
 }
 
 .bubble-content code {
-    background: #1e293b;
+    background: var(--gold-light);
     padding: 1px 5px;
-    border-radius: 4px;
+    border: 1px solid var(--border);
     font-size: 0.9em;
 }
 
@@ -205,7 +273,7 @@ button, input, textarea, select {
 
 .cursor {
     animation: blink 0.8s infinite;
-    color: var(--accent2);
+    color: var(--accent);
 }
 
 @keyframes blink {
@@ -214,7 +282,7 @@ button, input, textarea, select {
 }
 
 .error-text {
-    color: #fca5a5;
+    color: var(--danger);
 }
 
 /* ── Sources ────────────────────────────────────────── */
@@ -236,28 +304,29 @@ button, input, textarea, select {
 
 .source-tag {
     font-size: 0.75rem;
-    background: #1e293b;
-    border: 1px solid #334155;
+    background: var(--gold-light);
+    border: 1px solid #E8D5A0;
     color: var(--accent2);
     padding: 3px 8px;
-    border-radius: 999px;
+    border-radius: 2px;
 }
 
 .web-tag {
     text-decoration: none;
-    color: #60a5fa;
-    border-color: #1e3a5f;
-    background: #0f2236;
+    color: #1a5276;
+    border-color: #BDD7EE;
+    background: #EBF5FB;
 }
 
 .web-tag:hover {
-    background: #1e3a5f;
+    background: #D6EAF8;
 }
 
 /* ── Input area ─────────────────────────────────────── */
 .input-area {
     flex-shrink: 0;
     padding: 8px 0;
+    border-top: 1px solid var(--border);
 }
 
 .input-row {
@@ -268,10 +337,10 @@ button, input, textarea, select {
 
 .input-row textarea {
     flex: 1;
-    background: #0b1224;
+    background: var(--card);
     color: var(--text);
-    border: 1px solid #334155;
-    border-radius: 12px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
     padding: 10px 14px;
     resize: none;
     font-size: 0.95rem;
@@ -287,14 +356,21 @@ button, input, textarea, select {
 .send-btn {
     width: 44px;
     height: 44px;
-    border-radius: 50%;
+    border-radius: 2px;
     font-size: 1.2rem;
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 0;
     flex-shrink: 0;
+    background: var(--accent);
+    color: var(--near-black);
+    border: none;
+    cursor: pointer;
+    transition: background 0.2s;
 }
+
+.send-btn:hover { background: var(--accent2); color: #FFFFFF; }
 
 .input-footer {
     display: flex;
@@ -307,16 +383,18 @@ button, input, textarea, select {
 /* ── Buttons ────────────────────────────────────────── */
 .primary {
     background: var(--accent);
-    color: white;
+    color: var(--near-black);
     border: none;
     padding: 10px 14px;
-    border-radius: 8px;
+    border-radius: 2px;
     cursor: pointer;
+    font-weight: 600;
     transition: background 0.2s;
 }
 
 .primary:hover {
-    background: #4338ca;
+    background: var(--accent2);
+    color: #FFFFFF;
 }
 
 .primary:disabled {
@@ -325,16 +403,17 @@ button, input, textarea, select {
 }
 
 .secondary {
-    border: 1px solid #334155;
-    background: #0b1224;
+    border: 1px solid var(--border);
+    background: var(--card);
     color: var(--text);
     padding: 8px 12px;
-    border-radius: 8px;
+    border-radius: 2px;
     cursor: pointer;
+    transition: border-color 0.2s;
 }
 
 .secondary:hover {
-    background: #1e293b;
+    border-color: var(--accent);
 }
 
 /* ── Checkbox ───────────────────────────────────────── */
@@ -345,6 +424,10 @@ button, input, textarea, select {
     color: var(--muted);
     font-size: 0.85rem;
     cursor: pointer;
+}
+
+.checkbox input {
+    accent-color: var(--accent);
 }
 
 .muted {
@@ -358,13 +441,15 @@ footer {
     color: var(--muted);
     padding: 8px 0;
     flex-shrink: 0;
+    font-size: 0.82rem;
+    border-top: 1px solid var(--border);
 }
 
 /* ── Modal ──────────────────────────────────────────── */
 .modal {
     position: fixed;
     inset: 0;
-    background: rgba(2, 6, 23, 0.7);
+    background: rgba(0, 0, 0, 0.4);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -374,28 +459,35 @@ footer {
 
 .modal-content {
     background: var(--card);
-    border: 1px solid #1f2937;
-    border-radius: 12px;
-    padding: 20px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    padding: 24px;
     max-width: 800px;
     width: 100%;
     max-height: 80vh;
     overflow-y: auto;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
 }
 
 .modal-content h3 {
     margin-top: 0;
+    font-weight: 700;
 }
 
 .modal-content textarea {
     width: 100%;
-    background: #0b1224;
+    background: var(--bg);
     color: var(--text);
-    border: 1px solid #334155;
-    border-radius: 8px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
     padding: 10px;
     resize: vertical;
     min-height: 200px;
+}
+
+.modal-content textarea:focus {
+    outline: none;
+    border-color: var(--accent);
 }
 
 .modal-actions {
@@ -415,14 +507,14 @@ footer {
 }
 
 .chat-area::-webkit-scrollbar-thumb {
-    background: #334155;
+    background: var(--border-dark);
     border-radius: 3px;
 }
 
 /* ── Mobile ─────────────────────────────────────────── */
 @media (max-width: 640px) {
     .container {
-        padding: 12px 16px;
+        padding: 0 16px 12px;
     }
 
     .hero-title h1 {
@@ -437,81 +529,102 @@ footer {
         font-size: 0.8rem;
         padding: 6px 12px;
     }
+
+    .site-topbar {
+        padding: 8px 16px;
+    }
+
+    .site-topbar-nav {
+        gap: 8px;
+    }
+
+    .site-topbar-nav a {
+        font-size: 0.78rem;
+    }
 }
 
-/* ── Per-response TTS play button ──────────────────────────── */
+/* ── Per-response TTS play button ──────────────────── */
 .bubble-actions {
     margin-top: 6px;
     padding-top: 4px;
-    border-top: 1px solid rgba(255,255,255,0.1);
+    border-top: 1px solid var(--border);
 }
+
 .tts-play-btn {
-    background: rgba(255,255,255,0.08);
-    border: 1px solid rgba(255,255,255,0.15);
-    color: #ccc;
+    background: var(--gold-light);
+    border: 1px solid #E8D5A0;
+    color: var(--accent2);
     padding: 4px 10px;
-    border-radius: 6px;
+    border-radius: 2px;
     cursor: pointer;
     font-size: 0.82rem;
     transition: background 0.2s, color 0.2s;
 }
+
 .tts-play-btn:hover {
-    background: rgba(255,255,255,0.15);
-    color: #fff;
+    background: var(--accent);
+    color: var(--near-black);
 }
 
-/* ── Mermaid flowchart ─────────────────────────────────────── */
+/* ── Mermaid flowchart ─────────────────────────────── */
 .mermaid-container {
     margin: 12px 0;
     padding: 12px;
-    background: rgba(255,255,255,0.05);
-    border-radius: 10px;
-    border: 1px solid rgba(255,255,255,0.1);
+    background: var(--bg);
+    border: 1px solid var(--border);
     text-align: center;
 }
+
 .mermaid-chart svg {
     max-width: 100%;
     height: auto;
 }
+
 .mermaid-export-btn {
     margin-top: 8px;
     display: inline-block;
 }
 
-/* ── Memories modal ────────────────────────────────────────── */
+/* ── Memories modal ────────────────────────────────── */
 .memories-list {
     max-height: 300px;
     overflow-y: auto;
     margin-bottom: 12px;
 }
+
 .memory-item {
     display: flex;
     gap: 6px;
     align-items: center;
     margin-bottom: 6px;
 }
+
 .memory-input {
     flex: 1;
-    background: #0b1224;
-    border: 1px solid #334155;
+    background: var(--bg);
+    border: 1px solid var(--border);
     color: var(--text);
     padding: 8px 10px;
-    border-radius: 6px;
+    border-radius: 2px;
     font-size: 0.9rem;
 }
+
 .memory-input:focus {
     outline: none;
     border-color: var(--accent);
 }
+
 .memory-add-row {
     display: flex;
     gap: 8px;
     margin-bottom: 12px;
 }
+
 .danger {
-    color: #f87171 !important;
-    border-color: #f8717140 !important;
+    color: var(--danger) !important;
+    border-color: rgba(204, 0, 0, 0.25) !important;
 }
+
 .danger:hover {
-    background: #7f1d1d !important;
+    background: #FFF0F0 !important;
 }

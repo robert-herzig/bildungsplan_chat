@@ -1,9 +1,21 @@
 .env
-chroma_db/
+.env.*
+!.env.example
+
+# Data directories
+bildungsplan/chroma_db/
+bildungsplan/Bildungsplan_PDFs/
+bildungsplan/users.json
+bildungsplan/conversations.json
+bildungsplan/memories.json
+
+# Python
 __pycache__/
 *.pyc
 .venv/
 venv/
+
+# Node
 node_modules/
 package-lock.json
 

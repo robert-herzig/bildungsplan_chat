@@ -6,30 +6,154 @@
   <title>Bildungsplan GENT – Assistent</title>
   <link rel="stylesheet" href="./static/style.css">
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-  <script>mermaid.initialize({ startOnLoad: false, theme: 'dark' });</script>
+  <script>mermaid.initialize({ startOnLoad: false, theme: 'default' });</script>
   <style>
     .mic-btn {
       width: 44px; height: 44px; border-radius: 50%; font-size: 1.2rem;
       display: flex; align-items: center; justify-content: center; padding: 0; flex-shrink: 0;
-      border: 1px solid #334155; background: #0b1224; color: var(--text); cursor: pointer;
-      transition: background 0.2s;
+      border: 2px solid var(--accent); background: var(--gold-light); color: var(--text); cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
     }
-    .mic-btn:hover { background: #1e293b; }
-    .mic-btn.recording { background: #dc2626; border-color: #dc2626; animation: pulse 1s infinite; }
+    .mic-btn:hover { background: var(--accent); color: var(--near-black); }
+    .mic-btn.recording { background: #FFF0F0; border-color: #CC0000; animation: pulse 1s infinite; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
     .status-bar {
       font-size: 0.85rem; color: var(--muted); padding: 6px 12px;
-      background: rgba(255,255,255,0.03); border-radius: 8px; margin-bottom: 6px;
+      background: var(--card); border: 1px solid var(--border); margin-bottom: 6px;
       text-align: center;
     }
     .small-btn {
-      border: 1px solid #334155; background: #0b1224; color: var(--text);
-      padding: 4px 10px; border-radius: 6px; cursor: pointer; font-size: 0.8rem;
+      border: 1px solid var(--border); background: var(--card); color: var(--text);
+      padding: 4px 10px; border-radius: 2px; cursor: pointer; font-size: 0.8rem;
     }
-    .small-btn:hover { background: #1e293b; }
+    .small-btn:hover { border-color: var(--accent); background: var(--gold-light); }
+    .small-btn.danger { border-color: var(--danger); color: var(--danger); }
+    .small-btn.danger:hover { background: #FFF0F0; }
+
+    /* ── App layout with sidebar ─────────────────────── */
+    .app-layout {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+      min-height: 0;
+    }
+    .sidebar {
+      width: 240px;
+      background: var(--card);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow: hidden;
+      transition: width 0.2s ease;
+    }
+    .sidebar.collapsed { width: 0; }
+    .sidebar-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      font-size: 0.85rem;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+    .sidebar-new-btn {
+      border: 1px solid var(--accent);
+      background: var(--gold-light);
+      color: var(--accent2);
+      padding: 3px 8px;
+      font-size: 0.78rem;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .sidebar-new-btn:hover { background: var(--accent); color: var(--near-black); }
+    .sidebar-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+    .sidebar-item {
+      padding: 8px 12px;
+      cursor: pointer;
+      border-left: 3px solid transparent;
+      transition: background 0.15s;
+      position: relative;
+    }
+    .sidebar-item:hover { background: var(--gold-light); border-left-color: var(--accent); }
+    .sidebar-item.active { background: var(--gold-light); border-left-color: var(--accent); font-weight: 600; }
+    .sidebar-item-title {
+      font-size: 0.82rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      padding-right: 20px;
+    }
+    .sidebar-item-meta { font-size: 0.72rem; color: var(--muted); }
+    .sidebar-del {
+      position: absolute;
+      right: 6px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 0.9rem;
+      padding: 2px 4px;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    .sidebar-item:hover .sidebar-del { opacity: 1; }
+    .sidebar-del:hover { color: var(--danger); }
+    .sidebar-empty { padding: 16px 12px; color: var(--muted); font-size: 0.82rem; }
+
+    /* Override container when inside app-layout */
+    .app-layout .container {
+      height: 100%;
+      min-height: 0;
+      flex: 1;
+      min-width: 0;
+      max-width: none;
+      margin: 0;
+    }
+
+    /* ── Toast notification ─────────────────────────── */
+    #toastBar {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--near-black);
+      color: #fff;
+      padding: 10px 20px;
+      font-size: 0.88rem;
+      border-left: 4px solid var(--accent);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.3s;
+      z-index: 9999;
+      max-width: 420px;
+      white-space: nowrap;
+    }
+    #toastBar.visible { opacity: 1; }
+
   </style>
 </head>
 <body>
+  <nav class="site-topbar">
+    <a href="/" class="brand"><img src="/shared/static/img/euletranspa.png" alt=""><span>Eulen<span class="gold">AI</span></span></a>
+    <div class="site-topbar-nav">
+      <a href="/">Home</a>
+      <a href="/leichte-sprache/">Leichte Sprache</a>
+    </div>
+  </nav>
+  <div class="app-layout">
+  <aside class="sidebar collapsed" id="sidebar">
+    <div class="sidebar-header">
+      <span>Gespräche</span>
+      <button class="sidebar-new-btn" id="newChatBtn" title="Neues Gespräch starten">+ Neu</button>
+    </div>
+    <div id="sidebarList" class="sidebar-list"></div>
+  </aside>
+
   <div class="container">
     <header class="hero">
       <div class="hero-top">
@@ -40,6 +164,7 @@
         <div class="hero-actions">
           <a href="./conversation" class="icon-btn" aria-label="Elterngespräch-Simulator" title="Elterngespräch-Simulator">🗣️</a>
           <button id="historyBtn" class="icon-btn" aria-label="Gesprächsverlauf" title="Gespeicherte Gespräche">📋</button>
+          <button id="endeBtn" class="icon-btn" aria-label="Gespräch beenden & Erinnerungen extrahieren" title="Gespräch beenden">🏁</button>
           <button id="memoriesBtn" class="icon-btn" aria-label="Erinnerungen" title="Erinnerungen verwalten">🧠</button>
           <button id="usersBtn" class="icon-btn" aria-label="Benutzer" title="Benutzer verwalten">👥</button>
           <button id="settingsBtn" class="icon-btn" aria-label="Einstellungen" title="System-Prompt anpassen">⚙</button>
@@ -90,9 +215,10 @@
     </main>
 
     <footer>
-      <small>Bereitgestellt von eulenai.de</small>
+      <small>Eulen<strong style="color:var(--accent)">AI</strong> &middot; KI-Werkzeuge für Lehrkräfte &middot; eulenai.de</small>
     </footer>
   </div>
+  </div><!-- /.app-layout -->
 
   <!-- Settings Modal -->
   <div id="promptModal" class="modal" style="display:none;">
@@ -123,17 +249,7 @@
     </div>
   </div>
 
-  <!-- Conversation History Modal -->
-  <div id="historyModal" class="modal" style="display:none;">
-    <div class="modal-content" style="max-width:560px;">
-      <h3>📋 Gespeicherte Gespräche</h3>
-      <p class="muted">Klicke auf ein Gespräch, um es fortzusetzen.</p>
-      <div id="historyList" class="memories-list" style="max-height:400px;overflow-y:auto;"></div>
-      <div class="modal-actions">
-        <button id="closeHistoryBtn" class="secondary">Schließen</button>
-      </div>
-    </div>
-  </div>
+  <div id="toastBar"></div>
 
   <!-- User Management Modal -->
   <div id="usersModal" class="modal" style="display:none;">
@@ -935,13 +1051,9 @@
 
     // ── Clear chat ──
     clearBtn.onclick = () => {
-      chatHistory = [];
-      currentConversationId = null;
-      chatArea.innerHTML = '';
-      chatArea.appendChild(welcomeMsg);
-      welcomeMsg.style.display = '';
       stopAudio();
       setStatus('');
+      startNewChat();
     };
 
     // ── Settings modal ──
@@ -1066,6 +1178,93 @@
       }
     });
 
+    // ── Sidebar (conversation history) ──────────────────────
+    const sidebar = document.getElementById('sidebar');
+    const sidebarList = document.getElementById('sidebarList');
+    const historyBtn = document.getElementById('historyBtn');
+    const newChatBtn = document.getElementById('newChatBtn');
+
+    historyBtn.onclick = () => {
+      sidebar.classList.toggle('collapsed');
+      if (!sidebar.classList.contains('collapsed')) renderSidebar();
+    };
+
+    newChatBtn.onclick = () => startNewChat();
+
+    function startNewChat() {
+      chatHistory = [];
+      currentConversationId = null;
+      chatArea.innerHTML = '';
+      welcomeMsg.style.display = '';
+      document.querySelectorAll('.sidebar-item').forEach(el => el.classList.remove('active'));
+    }
+
+    async function renderSidebar() {
+      sidebarList.innerHTML = '<div class="sidebar-empty">Lade …</div>';
+      try {
+        const r = await fetch(BASE_PATH + '/conversations');
+        const data = await r.json();
+        const convos = data.conversations || [];
+        if (convos.length === 0) {
+          sidebarList.innerHTML = '<div class="sidebar-empty">Noch keine gespeicherten Gespräche.</div>';
+          return;
+        }
+        sidebarList.innerHTML = '';
+        for (const c of convos) {
+          const item = document.createElement('div');
+          item.className = 'sidebar-item' + (c.id === currentConversationId ? ' active' : '');
+          item.dataset.id = c.id;
+          const dateStr = new Date(c.updated).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+          item.innerHTML = `
+            <div class="sidebar-item-title">${escapeHtml(c.title)}</div>
+            <div class="sidebar-item-meta">${dateStr} · ${c.messageCount} Nachr.</div>
+            <button class="sidebar-del" data-id="${c.id}" title="Löschen">✕</button>
+          `;
+          item.addEventListener('click', (e) => {
+            if (e.target.classList.contains('sidebar-del')) return;
+            loadConversation(c.id);
+          });
+          item.querySelector('.sidebar-del').addEventListener('click', async (e) => {
+            e.stopPropagation();
+            if (!confirm('Gespräch wirklich löschen?')) return;
+            await fetch(BASE_PATH + '/conversations/' + c.id, { method: 'DELETE' });
+            if (currentConversationId === c.id) startNewChat();
+            await renderSidebar();
+          });
+          sidebarList.appendChild(item);
+        }
+      } catch {
+        sidebarList.innerHTML = '<div class="sidebar-empty">Fehler beim Laden.</div>';
+      }
+    }
+
+    async function loadConversation(id) {
+      try {
+        const r = await fetch(BASE_PATH + '/conversations/' + id);
+        const data = await r.json();
+        if (!data.conversation) return;
+        const convo = data.conversation;
+        // Load last 30 messages into context (last 15 exchanges)
+        chatHistory = (convo.messages || []).slice(-30);
+        currentConversationId = convo.id;
+        chatArea.innerHTML = '';
+        welcomeMsg.style.display = 'none';
+        for (const msg of chatHistory) {
+          const bubble = appendBubble(msg.role, '');
+          const contentDiv = bubble.querySelector('.bubble-content');
+          contentDiv.innerHTML = msg.role === 'user' ? escapeHtml(msg.content) : formatMarkdown(msg.content);
+          if (msg.role === 'assistant') renderMermaidCharts(contentDiv);
+        }
+        scrollToBottom();
+        // Mark active in sidebar
+        document.querySelectorAll('.sidebar-item').forEach(el => {
+          el.classList.toggle('active', el.dataset.id === id);
+        });
+      } catch (e) {
+        console.warn('Load conversation failed:', e);
+      }
+    }
+
     // ── Auto-save conversation ──
     async function autoSaveConversation() {
       if (chatHistory.length < 2) return;
@@ -1076,102 +1275,86 @@
           body: JSON.stringify({ id: currentConversationId, messages: chatHistory }),
         });
         const data = await r.json();
-        if (data.ok && data.id) currentConversationId = data.id;
+        if (data.ok && data.id) {
+          currentConversationId = data.id;
+          // Refresh sidebar silently if open
+          if (!sidebar.classList.contains('collapsed')) renderSidebar();
+        }
       } catch (e) {
         console.warn('Auto-save failed:', e);
       }
     }
 
-    // ── Conversation History modal ──
-    const historyBtn = document.getElementById('historyBtn');
-    const historyModal = document.getElementById('historyModal');
-    const historyList = document.getElementById('historyList');
-
-    historyBtn.onclick = async () => {
-      historyModal.style.display = 'flex';
-      await loadConversations();
-    };
-
-    document.getElementById('closeHistoryBtn').onclick = () => {
-      historyModal.style.display = 'none';
-    };
-
-    historyModal.addEventListener('click', (e) => {
-      if (e.target === historyModal) historyModal.style.display = 'none';
-    });
-
-    async function loadConversations() {
-      try {
-        const r = await fetch(BASE_PATH + '/conversations');
-        const data = await r.json();
-        renderConversations(data.conversations || []);
-      } catch {
-        historyList.innerHTML = '<p class="muted">Fehler beim Laden.</p>';
-      }
+    // ── Toast helper ──
+    const toastBar = document.getElementById('toastBar');
+    let toastTimer = null;
+    function showToast(msg, durationMs = 4000) {
+      toastBar.textContent = msg;
+      toastBar.classList.add('visible');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toastBar.classList.remove('visible'), durationMs);
     }
 
-    function renderConversations(convos) {
-      if (convos.length === 0) {
-        historyList.innerHTML = '<p class="muted">Noch keine gespeicherten Gespräche.</p>';
-        return;
-      }
-      historyList.innerHTML = '';
-      for (const c of convos) {
-        const item = document.createElement('div');
-        item.className = 'memory-item';
-        item.style.cssText = 'cursor:pointer;display:flex;align-items:center;gap:8px;';
-        const dateStr = new Date(c.updated).toLocaleString('de-DE', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' });
-        item.innerHTML = `
-          <div style="flex:1;min-width:0;" class="convo-load" data-id="${c.id}">
-            <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(c.title)}</div>
-            <div class="muted" style="font-size:0.8rem;">${dateStr} · ${c.messageCount} Nachrichten</div>
-          </div>
-          <button class="small-btn danger convo-del-btn" data-id="${c.id}" title="Löschen">🗑</button>
-        `;
-        historyList.appendChild(item);
-      }
-      // Wire load
-      historyList.querySelectorAll('.convo-load').forEach(el => {
-        el.addEventListener('click', () => loadConversation(el.dataset.id));
-      });
-      // Wire delete
-      historyList.querySelectorAll('.convo-del-btn').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          if (!confirm('Gespräch wirklich löschen?')) return;
-          await fetch(BASE_PATH + '/conversations/' + btn.dataset.id, { method: 'DELETE' });
-          if (currentConversationId === btn.dataset.id) currentConversationId = null;
-          await loadConversations();
+    // ── Background memory extraction ──
+    async function extractAndSaveMemories(messages) {
+      if (!messages || messages.length < 2) return;
+      try {
+        const r = await fetch(BASE_PATH + '/conversations/summarize', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages }),
         });
-      });
+        const data = await r.json();
+        const memories = data.memories || [];
+        for (const content of memories) {
+          await fetch(BASE_PATH + '/memories', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content }),
+          });
+        }
+        if (memories.length > 0) {
+          showToast(`🧠 ${memories.length} Erinnerung${memories.length > 1 ? 'en' : ''} gespeichert`);
+        }
+      } catch { /* silent */ }
     }
 
-    async function loadConversation(id) {
-      try {
-        const r = await fetch(BASE_PATH + '/conversations/' + id);
-        const data = await r.json();
-        if (!data.conversation) return;
-        const convo = data.conversation;
-        // Reset UI
-        chatHistory = convo.messages || [];
-        currentConversationId = convo.id;
-        chatArea.innerHTML = '';
-        welcomeMsg.style.display = 'none';
-        // Rebuild bubbles
-        for (const msg of chatHistory) {
-          const bubble = appendBubble(msg.role, msg.role === 'user' ? escapeHtml(msg.content) : formatMarkdown(msg.content));
-          if (msg.role === 'assistant') {
-            const contentDiv = bubble.querySelector('.bubble-content');
-            contentDiv.innerHTML = formatMarkdown(msg.content);
-            renderMermaidCharts(contentDiv);
-          }
-        }
-        scrollToBottom();
-        historyModal.style.display = 'none';
-      } catch (e) {
-        console.warn('Load conversation failed:', e);
+    // ── Ende button: start new chat immediately, extract in background ──
+    const endeBtn = document.getElementById('endeBtn');
+    endeBtn.onclick = () => {
+      if (chatHistory.length < 2) return;
+      const snapshot = chatHistory.slice(); // capture before clearing
+      autoSaveConversation();               // persist the conversation
+      startNewChat();
+      if (!sidebar.classList.contains('collapsed')) renderSidebar();
+      showToast('⏳ Analysiere Gespräch …', 60000);
+      extractAndSaveMemories(snapshot);     // fire-and-forget
+    };
+
+    // ── Auto-extract when navigating away ──
+    let extractOnHidePending = false;
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden' && chatHistory.length >= 2 && !extractOnHidePending) {
+        extractOnHidePending = true;
+        const snapshot = chatHistory.slice();
+        // sendBeacon is guaranteed to complete even when the page is unloading
+        const payload = new Blob(
+          [JSON.stringify({ id: currentConversationId, messages: snapshot })],
+          { type: 'application/json' }
+        );
+        navigator.sendBeacon(BASE_PATH + '/conversations', payload);
+        extractAndSaveMemories(snapshot);
       }
-    }
+    });
+    // Also intercept in-page nav links
+    document.querySelectorAll('.site-topbar-nav a, .brand').forEach(link => {
+      link.addEventListener('click', () => {
+        if (chatHistory.length >= 2) {
+          autoSaveConversation();
+          extractAndSaveMemories(chatHistory.slice());
+        }
+      });
+    });
 
     // ── User Management modal ──
     const usersBtn = document.getElementById('usersBtn');

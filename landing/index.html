@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EulenAI – KI-Werkzeuge für Lehrkräfte</title>
+  <style>
+    :root {
+      --white: #FFFFFF;
+      --off-white: #FAFAFA;
+      --light-gray: #F0F0F0;
+      --border: #E0E0E0;
+      --text: #111111;
+      --text-secondary: #555555;
+      --muted: #999999;
+      --gold: #C9A84C;
+      --gold-hover: #A88A30;
+      --gold-light: #F7F2E4;
+      --gold-dark: #8B6914;
+      --black: #111111;
+      --near-black: #1A1A1A;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--off-white);
+      color: var(--text);
+      line-height: 1.6;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Top bar ─────────────────────────── */
+    .topbar {
+      background: var(--near-black);
+      color: var(--white);
+      padding: 14px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 3px solid var(--gold);
+    }
+
+    .topbar-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--white);
+    }
+
+    .topbar-brand img {
+      width: 36px;
+      height: 36px;
+      object-fit: contain;
+    }
+
+    .topbar-brand span {
+      font-size: 1.3rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .topbar-brand .brand-dot {
+      color: var(--gold);
+    }
+
+    .topbar-nav {
+      display: flex;
+      gap: 24px;
+    }
+
+    .topbar-nav a {
+      color: #CCCCCC;
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: color 0.2s;
+      position: relative;
+    }
+
+    .topbar-nav a:hover {
+      color: var(--gold);
+    }
+
+    /* ── Hero ─────────────────────────────── */
+    .hero {
+      background: var(--near-black);
+      color: var(--white);
+      padding: 80px 32px 72px;
+      text-align: center;
+    }
+
+    .hero-inner {
+      max-width: 720px;
+      margin: 0 auto;
+    }
+
+    .hero-logo {
+      width: 100px;
+      height: 100px;
+      margin: 0 auto 24px;
+      object-fit: contain;
+    }
+
+    .hero h1 {
+      font-size: clamp(2rem, 5vw, 3rem);
+      font-weight: 800;
+      margin-bottom: 8px;
+      letter-spacing: -0.01em;
+    }
+
+    .hero h1 .gold {
+      color: var(--gold);
+    }
+
+    .hero-tagline {
+      font-size: 1.15rem;
+      color: #AAAAAA;
+      max-width: 520px;
+      margin: 0 auto 32px;
+      line-height: 1.5;
+    }
+
+    .hero-line {
+      width: 60px;
+      height: 3px;
+      background: var(--gold);
+      margin: 0 auto;
+    }
+
+    /* ── Tools section ────────────────────── */
+    .section {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 64px 32px;
+      width: 100%;
+    }
+
+    .section-title {
+      font-size: 1.6rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+      text-align: center;
+    }
+
+    .section-subtitle {
+      text-align: center;
+      color: var(--text-secondary);
+      margin-bottom: 48px;
+      font-size: 1rem;
+    }
+
+    .tools-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+    }
+
+    .tool-card {
+      background: var(--white);
+      border: 1px solid var(--border);
+      padding: 32px 28px;
+      text-decoration: none;
+      color: var(--text);
+      transition: border-color 0.2s, box-shadow 0.2s;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .tool-card:hover {
+      border-color: var(--gold);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+    }
+
+    .tool-icon {
+      font-size: 2rem;
+      margin-bottom: 16px;
+      width: 56px;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--gold-light);
+      border: 1px solid var(--gold);
+    }
+
+    .tool-card h3 {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .tool-card p {
+      color: var(--text-secondary);
+      font-size: 0.92rem;
+      line-height: 1.5;
+      flex: 1;
+    }
+
+    .tool-card .tool-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--gold-dark);
+      font-weight: 600;
+      font-size: 0.9rem;
+      margin-top: 16px;
+      transition: color 0.2s;
+    }
+
+    .tool-card:hover .tool-link {
+      color: var(--gold);
+    }
+
+    /* ── About section ────────────────────── */
+    .about {
+      background: var(--white);
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .about-inner {
+      max-width: 720px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    .about-inner p {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      line-height: 1.7;
+    }
+
+    .ref-list {
+      display: flex;
+      justify-content: center;
+      gap: 32px;
+      margin-top: 32px;
+      flex-wrap: wrap;
+    }
+
+    .ref-item {
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    .ref-item strong {
+      display: block;
+      color: var(--text);
+      font-size: 0.9rem;
+      margin-bottom: 2px;
+    }
+
+    /* ── Footer ───────────────────────────── */
+    footer {
+      background: var(--near-black);
+      color: #888888;
+      padding: 32px;
+      text-align: center;
+      margin-top: auto;
+      border-top: 3px solid var(--gold);
+    }
+
+    footer .footer-brand {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--white);
+      margin-bottom: 4px;
+    }
+
+    footer .footer-brand .gold { color: var(--gold); }
+
+    footer small {
+      font-size: 0.82rem;
+    }
+
+    /* ── Responsive ───────────────────────── */
+    @media (max-width: 640px) {
+      .topbar { padding: 12px 16px; }
+      .topbar-nav { gap: 12px; }
+      .topbar-nav a { font-size: 0.82rem; }
+      .hero { padding: 48px 20px 40px; }
+      .hero-logo { width: 72px; height: 72px; }
+      .section { padding: 40px 20px; }
+      .tools-grid { grid-template-columns: 1fr; }
+      .ref-list { gap: 20px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top bar -->
+  <nav class="topbar">
+    <a href="/" class="topbar-brand">
+      <img src="/shared/static/img/euletranspa.png" alt="EulenAI Logo">
+      <span>Eulen<span class="brand-dot">AI</span></span>
+    </a>
+    <div class="topbar-nav">
+      <a href="/bildungsplan/">Bildungsplan</a>
+      <a href="/bildungsplan/conversation">Elterngespräch</a>
+      <a href="/leichte-sprache/">Leichte Sprache</a>
+      <a href="/leichte-sprache/?tab=cleanup">Notizen</a>
+      <a href="#" id="logoutBtn" style="color:#C9A84C;">Abmelden</a>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="hero-inner">
+      <img src="/shared/static/img/euletranspa.png" alt="EulenAI Eule" class="hero-logo">
+      <h1>Eulen<span class="gold">AI</span></h1>
+      <p class="hero-tagline">KI-gestützte Werkzeuge für Lehrkräfte an Sonderpädagogischen Bildungs- und Beratungszentren in Baden-Württemberg.</p>
+      <div class="hero-line"></div>
+    </div>
+  </section>
+
+  <!-- Tools -->
+  <section class="section">
+    <h2 class="section-title">Werkzeuge</h2>
+    <p class="section-subtitle">Wähle ein Werkzeug, um loszulegen.</p>
+
+    <div class="tools-grid">
+
+      <a href="/bildungsplan/" class="tool-card">
+        <div class="tool-icon">🎓</div>
+        <h3>Bildungsplan Assistent</h3>
+        <p>Durchsuche den Bildungsplan 2022 für den Förderschwerpunkt Geistige Entwicklung mit KI. Stelle Fragen und erhalte Antworten mit Quellenangaben direkt aus dem Bildungsplan.</p>
+        <span class="tool-link">Zum Assistenten →</span>
+      </a>
+
+      <a href="/bildungsplan/conversation" class="tool-card">
+        <div class="tool-icon">🗣️</div>
+        <h3>Elterngespräch-Simulator</h3>
+        <p>Trainiere schwierige Elterngespräche mit KI-generierten Elternpersönlichkeiten. Von der besorgten Mutter bis zum skeptischen Großvater – übe mit Spracheingabe und -ausgabe.</p>
+        <span class="tool-link">Zum Simulator →</span>
+      </a>
+
+      <a href="/leichte-sprache/" class="tool-card">
+        <div class="tool-icon">📝</div>
+        <h3>Leichte &amp; Einfache Sprache</h3>
+        <p>Übersetze Texte automatisch in Leichte oder Einfache Sprache. Ideal für Elternbriefe, Förderpläne oder Berichte – präzise, regelkonform und barrierearm.</p>
+        <span class="tool-link">Zum Übersetzer →</span>
+      </a>
+
+      <a href="/leichte-sprache/?tab=cleanup" class="tool-card">
+        <div class="tool-icon">✏️</div>
+        <h3>Notizen ausformulieren</h3>
+        <p>Verwandle chaotische Stichpunkte und Notizen in fehlerfreie, professionelle Texte. Ideal für Sitzungsnotizen, Beobachtungsaufzeichnungen und interne Berichte.</p>
+        <span class="tool-link">Zu den Notizen →</span>
+      </a>
+
+    </div>
+  </section>
+
+  <!-- About / References -->
+  <section class="section about">
+    <div class="about-inner">
+      <h2 class="section-title">Über EulenAI</h2>
+      <p>EulenAI ist eine Sammlung von KI-Werkzeugen, die speziell für den Einsatz an sonderpädagogischen Schulen entwickelt wurden. Alle Tools nutzen moderne Sprachmodelle, um Lehrkräften im Alltag zu helfen – von der Unterrichtsplanung bis zur Elternkommunikation.</p>
+      <div class="ref-list">
+        <div class="ref-item">
+          <strong>Sprachmodell</strong>
+          Mistral AI
+        </div>
+        <div class="ref-item">
+          <strong>Spracherkennung</strong>
+          Mistral Voxtral
+        </div>
+        <div class="ref-item">
+          <strong>Sprachausgabe</strong>
+          Microsoft Edge TTS
+        </div>
+        <div class="ref-item">
+          <strong>Bildungsplan</strong>
+          BW 2022 GENT
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="footer-brand">Eulen<span class="gold">AI</span></div>
+    <small>KI-Werkzeuge für Lehrkräfte &middot; eulenai.de</small>
+  </footer>
+
+  <script>
+    document.getElementById("logoutBtn").addEventListener("click", async (e) => {
+      e.preventDefault();
+      await fetch("/auth/logout", { method: "POST" });
+      window.location.href = "/login";
+    });
+  </script>
+
+</body>
+</html>

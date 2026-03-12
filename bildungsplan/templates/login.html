@@ -3,37 +3,68 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Anmelden – Bildungsplan GENT Assistent</title>
+  <title>Anmelden – EulenAI</title>
   <style>
     :root {
-      --bg: #0f172a;
-      --surface: #1e293b;
-      --accent: #6366f1;
-      --text: #e2e8f0;
-      --muted: #94a3b8;
+      --bg: #FAFAFA;
+      --card: #FFFFFF;
+      --accent: #C9A84C;
+      --accent-hover: #A88A30;
+      --text: #111111;
+      --muted: #888888;
+      --border: #E0E0E0;
+      --near-black: #1A1A1A;
+      --gold-light: #F7F2E4;
+      --danger: #CC0000;
     }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       background: var(--bg);
       color: var(--text);
       font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
       min-height: 100vh;
       display: flex;
+      flex-direction: column;
+    }
+    .login-topbar {
+      background: var(--near-black);
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      border-bottom: 3px solid var(--accent);
+    }
+    .login-topbar a {
+      color: #FFFFFF;
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .login-topbar a img {
+      width: 24px; height: 24px; object-fit: contain;
+    }
+    .login-topbar .gold { color: var(--accent); }
+    .login-center {
+      flex: 1;
+      display: flex;
       align-items: center;
       justify-content: center;
+      padding: 24px;
     }
     .login-card {
-      background: var(--surface);
-      border-radius: 16px;
+      background: var(--card);
+      border: 1px solid var(--border);
       padding: 40px;
       width: 100%;
       max-width: 400px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
     }
     .login-card h1 {
       text-align: center;
       margin-bottom: 8px;
       font-size: 1.5rem;
+      font-weight: 700;
     }
     .login-card .subtitle {
       text-align: center;
@@ -49,14 +80,15 @@
       margin-bottom: 6px;
       font-size: 0.9rem;
       color: var(--muted);
+      font-weight: 600;
     }
     .form-group input {
       width: 100%;
       padding: 10px 14px;
       background: var(--bg);
-      border: 1px solid #334155;
+      border: 1px solid var(--border);
       color: var(--text);
-      border-radius: 8px;
+      border-radius: 2px;
       font-size: 1rem;
     }
     .form-group input:focus {
@@ -67,18 +99,19 @@
       width: 100%;
       padding: 12px;
       background: var(--accent);
-      color: #fff;
+      color: var(--near-black);
       border: none;
-      border-radius: 8px;
+      border-radius: 2px;
       font-size: 1rem;
+      font-weight: 600;
       cursor: pointer;
       margin-top: 8px;
       transition: background 0.2s;
     }
-    .login-btn:hover { background: #4f46e5; }
+    .login-btn:hover { background: var(--accent-hover); }
     .login-btn:disabled { opacity: 0.6; cursor: not-allowed; }
     .error-msg {
-      color: #f87171;
+      color: var(--danger);
       text-align: center;
       margin-top: 12px;
       font-size: 0.9rem;
@@ -87,6 +120,10 @@
   </style>
 </head>
 <body>
+  <nav class="login-topbar">
+    <a href="/"><img src="/shared/static/img/euletranspa.png" alt="">Eulen<span class="gold">AI</span></a>
+  </nav>
+  <div class="login-center">
   <div class="login-card">
     <h1>🎓 Bildungsplan GENT</h1>
     <p class="subtitle">Bitte melde dich an, um den Assistenten zu nutzen.</p>
@@ -102,6 +139,7 @@
       <button type="submit" class="login-btn" id="loginBtn">Anmelden</button>
     </form>
     <p class="error-msg" id="errorMsg"></p>
+  </div>
   </div>
 
   <script>

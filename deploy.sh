@@ -1,50 +1,34 @@
 #!/bin/bash
-# Deployment-Skript für den Bildungsplan GENT Assistenten
-# Führt alle Schritte aus, um die App auf dem Server zu deployen.
+# ── EulenAI – Unified Deployment Script ──────────────────────
+# Deploys all tools (Bildungsplan + Leichte Sprache + Landing)
 
 set -e
 
-APP_NAME="bildungsplan_assistent"
-DEPLOY_DIR="/var/www/bildungsplan"
+DEPLOY_DIR="/var/www/eulenai"
 SOURCE_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-echo "🎓 Bildungsplan GENT Assistent – Deployment"
-echo "============================================="
+echo "🦉 EulenAI – Deployment"
+echo "========================"
 
-# 1. Verzeichnis erstellen
+# 1. Create deployment directory
 echo ""
 echo "📁 Erstelle Deployment-Verzeichnis..."
-sudo mkdir -p "$DEPLOY_DIR"
+sudo mkdir -p "$DEPLOY_DIR"/{bildungsplan,leichte-sprache,landing,shared/static/img}
 sudo chown -R "$USER:$USER" "$DEPLOY_DIR"
 
-# 2. Dateien kopieren
-echo "📋 Kopiere Dateien..."
+# ── Gateway server ─────────────────────────────────────────
+echo "📋 Kopiere Gateway-Server..."
 cp "$SOURCE_DIR/server.js" "$DEPLOY_DIR/"
 cp "$SOURCE_DIR/package.json" "$DEPLOY_DIR/"
-cp "$SOURCE_DIR/query_helper.py" "$DEPLOY_DIR/"
-cp "$SOURCE_DIR/ingest.py" "$DEPLOY_DIR/"
-cp "$SOURCE_DIR/system_prompt.txt" "$DEPLOY_DIR/"
-cp "$SOURCE_DIR/ecosystem.config.js" "$DEPLOY_DIR/"
-cp "$SOURCE_DIR/tts_server.py" "$DEPLOY_DIR/"
-cp "$SOURCE_DIR/tts_helper.py" "$DEPLOY_DIR/"
-cp "$SOURCE_DIR/stt_helper.py" "$DEPLOY_DIR/"
-cp "$SOURCE_DIR/conversation_presets.json" "$DEPLOY_DIR/"
-cp "$SOURCE_DIR/web_search.py" "$DEPLOY_DIR/"
-cp -r "$SOURCE_DIR/templates" "$DEPLOY_DIR/"
-cp -r "$SOURCE_DIR/static" "$DEPLOY_DIR/"
+cp "$SOURCE_DIR/package-lock.json" "$DEPLOY_DIR/" 2>/dev/null || true
 
-# users.json / memories.json – only copy if not already on server (preserve data)
-if [ ! -f "$DEPLOY_DIR/users.json" ]; then
-    cp "$SOURCE_DIR/users.json" "$DEPLOY_DIR/"
-fi
-if [ ! -f "$DEPLOY_DIR/memories.json" ]; then
-    cp "$SOURCE_DIR/memories.json" "$DEPLOY_DIR/"
-fi
-if [ ! -f "$DEPLOY_DIR/conversations.json" ]; then
-    cp "$SOURCE_DIR/conversations.json" "$DEPLOY_DIR/"
-fi
+# ── Shared assets ──────────────────────────────────────────
+echo "📋 Kopiere gemeinsame Assets..."
+cp -r "$SOURCE_DIR/shared/static/"* "$DEPLOY_DIR/shared/static/"
+cp "$SOURCE_DIR/landing/index.html" "$DEPLOY_DIR/landing/"
+cp "$SOURCE_DIR/landing/login.html" "$DEPLOY_DIR/landing/"
 
-# .env kopieren (nur wenn nicht schon vorhanden)
+# ── .env (shared, only if not present) ─────────────────────
 if [ ! -f "$DEPLOY_DIR/.env" ]; then
     if [ -f "$SOURCE_DIR/.env" ]; then
         cp "$SOURCE_DIR/.env" "$DEPLOY_DIR/"
@@ -54,50 +38,107 @@ if [ ! -f "$DEPLOY_DIR/.env" ]; then
     fi
 fi
 
-# Bildungsplan PDFs verlinken/kopieren
-if [ -d "$SOURCE_DIR/Bildungsplan_PDFs" ]; then
-    cp -r "$SOURCE_DIR/Bildungsplan_PDFs" "$DEPLOY_DIR/" 2>/dev/null || true
-fi
-
-# ChromaDB kopieren (falls vorhanden)
-if [ -d "$SOURCE_DIR/chroma_db" ]; then
-    echo "💾 Kopiere ChromaDB..."
-    cp -r "$SOURCE_DIR/chroma_db" "$DEPLOY_DIR/"
-fi
-
-# 3. npm install
+# ── Gateway npm install ───────────────────────────────────
 echo ""
-echo "📦 Installiere npm-Pakete..."
+echo "📦 Installiere Gateway npm-Pakete..."
 cd "$DEPLOY_DIR"
 npm install --production
 
-# 4. Python-Abhängigkeiten
+# ── Bildungsplan ───────────────────────────────────────────
+echo ""
+echo "📋 Kopiere Bildungsplan-Dateien..."
+cp "$SOURCE_DIR/bildungsplan/server.js" "$DEPLOY_DIR/bildungsplan/"
+cp "$SOURCE_DIR/bildungsplan/package.json" "$DEPLOY_DIR/bildungsplan/"
+cp "$SOURCE_DIR/bildungsplan/query_helper.py" "$DEPLOY_DIR/bildungsplan/"
+cp "$SOURCE_DIR/bildungsplan/ingest.py" "$DEPLOY_DIR/bildungsplan/"
+cp "$SOURCE_DIR/bildungsplan/system_prompt.txt" "$DEPLOY_DIR/bildungsplan/"
+cp "$SOURCE_DIR/bildungsplan/tts_server.py" "$DEPLOY_DIR/bildungsplan/"
+cp "$SOURCE_DIR/bildungsplan/tts_helper.py" "$DEPLOY_DIR/bildungsplan/"
+cp "$SOURCE_DIR/bildungsplan/stt_helper.py" "$DEPLOY_DIR/bildungsplan/"
+cp "$SOURCE_DIR/bildungsplan/conversation_presets.json" "$DEPLOY_DIR/bildungsplan/"
+cp "$SOURCE_DIR/bildungsplan/web_search.py" "$DEPLOY_DIR/bildungsplan/"
+cp -r "$SOURCE_DIR/bildungsplan/templates" "$DEPLOY_DIR/bildungsplan/"
+cp -r "$SOURCE_DIR/bildungsplan/static" "$DEPLOY_DIR/bildungsplan/"
+
+# Preserve user data files
+for f in users.json memories.json conversations.json; do
+    if [ ! -f "$DEPLOY_DIR/bildungsplan/$f" ]; then
+        cp "$SOURCE_DIR/bildungsplan/$f" "$DEPLOY_DIR/bildungsplan/" 2>/dev/null || true
+    fi
+done
+
+# Bildungsplan PDFs & ChromaDB
+if [ -d "$SOURCE_DIR/bildungsplan/Bildungsplan_PDFs" ]; then
+    cp -r "$SOURCE_DIR/bildungsplan/Bildungsplan_PDFs" "$DEPLOY_DIR/bildungsplan/" 2>/dev/null || true
+fi
+if [ -d "$SOURCE_DIR/bildungsplan/chroma_db" ]; then
+    echo "💾 Kopiere ChromaDB..."
+    cp -r "$SOURCE_DIR/bildungsplan/chroma_db" "$DEPLOY_DIR/bildungsplan/"
+fi
+
+echo "📦 Installiere Bildungsplan npm-Pakete..."
+cd "$DEPLOY_DIR/bildungsplan"
+npm install --production
+
+# ── Leichte Sprache ───────────────────────────────────────
+echo ""
+echo "📋 Kopiere Leichte-Sprache-Dateien..."
+cp "$SOURCE_DIR/leichte-sprache/server.js" "$DEPLOY_DIR/leichte-sprache/"
+cp "$SOURCE_DIR/leichte-sprache/package.json" "$DEPLOY_DIR/leichte-sprache/"
+cp "$SOURCE_DIR/leichte-sprache/system_prompt_leichte.txt" "$DEPLOY_DIR/leichte-sprache/"
+cp "$SOURCE_DIR/leichte-sprache/system_prompt_einfache.txt" "$DEPLOY_DIR/leichte-sprache/"
+cp "$SOURCE_DIR/leichte-sprache/system_prompt_cleanup.txt" "$DEPLOY_DIR/leichte-sprache/"
+cp -r "$SOURCE_DIR/leichte-sprache/templates" "$DEPLOY_DIR/leichte-sprache/"
+cp -r "$SOURCE_DIR/leichte-sprache/static" "$DEPLOY_DIR/leichte-sprache/"
+
+echo "📦 Installiere Leichte-Sprache npm-Pakete..."
+cd "$DEPLOY_DIR/leichte-sprache"
+npm install --production
+
+# ── Python dependencies ───────────────────────────────────
 echo ""
 echo "🐍 Prüfe Python-Abhängigkeiten..."
-pip3 install --user pymupdf chromadb python-dotenv 2>/dev/null || {
+pip3 install --user pymupdf chromadb python-dotenv edge-tts ddgs 2>/dev/null || {
     echo "⚠️  Python-Pakete konnten nicht installiert werden."
-    echo "   Bitte manuell installieren: pip3 install pymupdf chromadb python-dotenv"
+    echo "   Bitte manuell installieren: pip3 install pymupdf chromadb python-dotenv edge-tts ddgs"
 }
 
-# 5. PM2 starten/neustarten
+# ── PM2 ───────────────────────────────────────────────────
 echo ""
 echo "✨ Starte/Neustarte PM2-Prozesse..."
-pm2 describe "$APP_NAME" > /dev/null 2>&1 && {
-    pm2 restart "$APP_NAME"
+cp "$SOURCE_DIR/ecosystem.config.js" "$DEPLOY_DIR/"
+
+pm2 describe "bildungsplan" > /dev/null 2>&1 && {
+    pm2 restart "bildungsplan"
 } || {
     cd "$DEPLOY_DIR"
-    pm2 start ecosystem.config.js --only "$APP_NAME"
+    pm2 start ecosystem.config.js --only "bildungsplan"
 }
+
+pm2 describe "leichte-sprache" > /dev/null 2>&1 && {
+    pm2 restart "leichte-sprache"
+} || {
+    cd "$DEPLOY_DIR"
+    pm2 start ecosystem.config.js --only "leichte-sprache"
+}
+
+pm2 describe "gateway" > /dev/null 2>&1 && {
+    pm2 restart "gateway"
+} || {
+    cd "$DEPLOY_DIR"
+    pm2 start ecosystem.config.js --only "gateway"
+}
+
 pm2 save
 
 echo ""
 echo "✅ Deployment abgeschlossen!"
 echo ""
-echo "   App läuft auf: http://127.0.0.1:5001"
+echo "   Gateway:          http://127.0.0.1:3000  →  / (nginx)"
+echo "   Bildungsplan:     http://127.0.0.1:5001  →  /bildungsplan/"
+echo "   Leichte Sprache:  http://127.0.0.1:5000  →  /leichte-sprache/"
 echo ""
 echo "   Nächste Schritte:"
-echo "   1. Falls noch nicht geschehen, MISTRAL_API_KEY in $DEPLOY_DIR/.env setzen"
-echo "   2. PDFs indexieren: cd $DEPLOY_DIR && python3 ingest.py"
-echo "   3. Nginx-Config hinzufügen (siehe nginx_bildungsplan.conf)"
-echo "   4. sudo nginx -t && sudo systemctl reload nginx"
-echo "   5. Zugriff über: https://eulenai.de/bildungsplan/"
+echo "   1. Nginx-Config aktualisieren (siehe nginx.conf)"
+echo "   2. sudo nginx -t && sudo systemctl reload nginx"
+echo "   3. Zugriff über: https://eulenai.de/"

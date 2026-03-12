@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EulenAI – Anmelden</title>
+  <style>
+    :root {
+      --white: #FFFFFF;
+      --off-white: #FAFAFA;
+      --light-gray: #F0F0F0;
+      --border: #E0E0E0;
+      --text: #111111;
+      --text-secondary: #555555;
+      --gold: #C9A84C;
+      --gold-hover: #A88A30;
+      --gold-light: #F7F2E4;
+      --black: #111111;
+      --near-black: #1A1A1A;
+      --error: #C0392B;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--off-white);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .topbar {
+      background: var(--near-black);
+      color: var(--white);
+      padding: 14px 32px;
+      display: flex;
+      align-items: center;
+      border-bottom: 3px solid var(--gold);
+    }
+
+    .topbar-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--white);
+    }
+
+    .topbar-brand img {
+      width: 36px;
+      height: 36px;
+      object-fit: contain;
+    }
+
+    .topbar-brand span {
+      font-size: 1.3rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    .brand-dot { color: var(--gold); }
+
+    .login-wrapper {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 32px 20px;
+    }
+
+    .login-card {
+      background: var(--white);
+      border: 1px solid var(--border);
+      padding: 48px 40px;
+      width: 100%;
+      max-width: 400px;
+    }
+
+    .login-card h1 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+      text-align: center;
+    }
+
+    .login-card .subtitle {
+      text-align: center;
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      margin-bottom: 32px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: var(--text);
+    }
+
+    .form-group input {
+      width: 100%;
+      padding: 10px 14px;
+      font-size: 0.95rem;
+      border: 1px solid var(--border);
+      background: var(--off-white);
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .form-group input:focus {
+      border-color: var(--gold);
+    }
+
+    .login-btn {
+      width: 100%;
+      padding: 12px;
+      font-size: 1rem;
+      font-weight: 700;
+      background: var(--gold);
+      color: var(--white);
+      border: none;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: background 0.2s;
+    }
+
+    .login-btn:hover {
+      background: var(--gold-hover);
+    }
+
+    .error-msg {
+      color: var(--error);
+      font-size: 0.85rem;
+      text-align: center;
+      margin-top: 16px;
+      min-height: 1.2em;
+    }
+
+    footer {
+      background: var(--near-black);
+      color: #888888;
+      padding: 24px;
+      text-align: center;
+      border-top: 3px solid var(--gold);
+    }
+
+    footer .footer-brand {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--white);
+      margin-bottom: 4px;
+    }
+
+    footer .gold { color: var(--gold); }
+
+    footer small { font-size: 0.82rem; }
+
+    @media (max-width: 480px) {
+      .login-card { padding: 32px 24px; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav class="topbar">
+    <a href="/login" class="topbar-brand">
+      <img src="/shared/static/img/euletranspa.png" alt="EulenAI Logo">
+      <span>Eulen<span class="brand-dot">AI</span></span>
+    </a>
+  </nav>
+
+  <div class="login-wrapper">
+    <div class="login-card">
+      <h1>Anmelden</h1>
+      <p class="subtitle">Melde dich an, um die EulenAI-Werkzeuge zu nutzen.</p>
+
+      <form id="loginForm">
+        <div class="form-group">
+          <label for="username">Benutzername</label>
+          <input type="text" id="username" name="username" autocomplete="username" required autofocus>
+        </div>
+        <div class="form-group">
+          <label for="password">Passwort</label>
+          <input type="password" id="password" name="password" autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="login-btn">Anmelden</button>
+        <p class="error-msg" id="errorMsg"></p>
+      </form>
+    </div>
+  </div>
+
+  <footer>
+    <div class="footer-brand">Eulen<span class="gold">AI</span></div>
+    <small>KI-Werkzeuge für Lehrkräfte &middot; eulenai.de</small>
+  </footer>
+
+  <script>
+    document.getElementById("loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const errEl = document.getElementById("errorMsg");
+      errEl.textContent = "";
+
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value;
+
+      try {
+        const res = await fetch("/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          window.location.href = "/";
+        } else {
+          errEl.textContent = data.error || "Anmeldung fehlgeschlagen.";
+        }
+      } catch (err) {
+        errEl.textContent = "Verbindungsfehler. Bitte versuche es erneut.";
+      }
+    });
+  </script>
+</body>
+</html>
