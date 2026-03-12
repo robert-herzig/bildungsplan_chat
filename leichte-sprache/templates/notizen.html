@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Notizen ausformulieren – EulenAI</title>
+  <link rel="stylesheet" href="/leichte-sprache/static/style.css">
+</head>
+<body>
+  <nav class="site-topbar">
+    <a href="/" class="brand"><img src="/shared/static/img/euletranspa.png" alt=""><span>Eulen<span class="gold">AI</span></span></a>
+    <div class="site-topbar-nav">
+      <a href="/bildungsplan/">Bildungsplan</a>
+      <a href="/bildungsplan/conversation">Elterngespräch</a>
+      <a href="/leichte-sprache/">Leichte Sprache</a>
+      <a href="/leichte-sprache/notizen">Notizen</a>
+      <a href="#" id="topbarLogoutBtn" style="color:#C9A84C;">Abmelden</a>
+    </div>
+  </nav>
+  <div class="container">
+    <header class="hero">
+      <div class="hero-top">
+        <h1>✏️ Notizen ausformulieren</h1>
+        <button id="historyBtn" class="icon-btn" title="Verlauf anzeigen">📋</button>
+      </div>
+      <p class="subtitle">Verwandle Stichpunkte und chaotische Notizen in fehlerfreie, professionelle Texte</p>
+    </header>
+
+    <main>
+      <section class="card">
+        <label for="notesInput">Deine Notizen / Stichpunkte</label>
+        <textarea id="notesInput" rows="10" placeholder="Schreibe hier deine Stichworte, Ideen oder chaotischen Sätze …"></textarea>
+        <p class="helper-text">Wir verwandeln deine Skizze in gut lesbares Deutsch mit korrekter Rechtschreibung und Zeichensetzung.</p>
+        <div class="actions">
+          <button id="cleanupBtn" class="primary">Ausformulieren</button>
+        </div>
+        <div id="cleanupLoading" class="loading" style="display:none;">Formuliere sauber …</div>
+        <div id="cleanupError" class="error" style="display:none;"></div>
+      </section>
+
+      <section class="card">
+        <div class="output-header">
+          <h2>Überarbeiteter Text</h2>
+          <button id="copyBtn" class="secondary">Kopieren</button>
+        </div>
+        <div id="cleanupOutput" class="output"></div>
+      </section>
+
+      <!-- History panel -->
+      <section id="historySection" class="card" style="display:none;">
+        <div class="output-header">
+          <h2>Verlauf</h2>
+          <button id="clearHistoryBtn" class="secondary">Leeren</button>
+        </div>
+        <div id="historyList"></div>
+      </section>
+    </main>
+
+    <footer>
+      <small>Eulen<strong style="color:var(--accent)">AI</strong> &middot; KI-Werkzeuge für Lehrkräfte &middot; eulenai.de</small>
+    </footer>
+  </div>
+
+  <script>
+    const BASE_PATH = '/leichte-sprache';
+    const HISTORY_KEY = 'eulenai_notizen_history';
+    const MAX_HIST = 8;
+
+    const notesInput = document.getElementById('notesInput');
+    const cleanupBtn = document.getElementById('cleanupBtn');
+    const cleanupOutput = document.getElementById('cleanupOutput');
+    const cleanupLoading = document.getElementById('cleanupLoading');
+    const cleanupError = document.getElementById('cleanupError');
+    const copyBtn = document.getElementById('copyBtn');
+    const historyBtn = document.getElementById('historyBtn');
+    const historySection = document.getElementById('historySection');
+    const historyList = document.getElementById('historyList');
+
+    cleanupBtn.onclick = async () => {
+      cleanupError.style.display = 'none';
+      cleanupOutput.textContent = '';
+      const text = notesInput.value.trim();
+      if (!text) {
+        cleanupError.textContent = 'Bitte zuerst deine Notizen eingeben.';
+        cleanupError.style.display = 'block';
+        return;
+      }
+      cleanupBtn.disabled = true;
+      cleanupLoading.style.display = 'block';
+      try {
+        const r = await fetch(BASE_PATH + '/cleanup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text })
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok || data.error) {
+          cleanupError.textContent = (data && data.error) || 'Fehler beim Ausformulieren.';
+          cleanupError.style.display = 'block';
+        } else {
+          const result = data.result || '';
+          cleanupOutput.textContent = result;
+          saveToHistory(text, result);
+        }
+      } catch (err) {
+        cleanupError.textContent = err && err.message ? err.message : 'Unbekannter Fehler.';
+        cleanupError.style.display = 'block';
+      } finally {
+        cleanupBtn.disabled = false;
+        cleanupLoading.style.display = 'none';
+      }
+    };
+
+    copyBtn.onclick = async () => {
+      const txt = cleanupOutput.innerText.trim();
+      if (!txt) return;
+      await navigator.clipboard.writeText(txt);
+      copyBtn.textContent = 'Kopiert!';
+      setTimeout(() => (copyBtn.textContent = 'Kopieren'), 1500);
+    };
+
+    historyBtn.onclick = () => {
+      if (historySection.style.display === 'none') {
+        renderHistory();
+        historySection.style.display = '';
+      } else {
+        historySection.style.display = 'none';
+      }
+    };
+
+    document.getElementById('clearHistoryBtn').onclick = () => {
+      localStorage.removeItem(HISTORY_KEY);
+      renderHistory();
+    };
+
+    function saveToHistory(input, output) {
+      const hist = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+      hist.unshift({ input, output, ts: Date.now() });
+      hist.splice(MAX_HIST);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(hist));
+      if (historySection.style.display !== 'none') renderHistory();
+    }
+
+    function renderHistory() {
+      const hist = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+      if (hist.length === 0) {
+        historyList.innerHTML = '<p style="color:var(--muted);font-size:0.88rem;padding:8px 0;">Noch kein Verlauf.</p>';
+        return;
+      }
+      historyList.innerHTML = '';
+      for (const item of hist) {
+        const d = document.createElement('div');
+        d.style.cssText = 'border-top:1px solid var(--border);padding:10px 0;cursor:pointer;';
+        const date = new Date(item.ts).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        d.innerHTML = `<div style="font-size:0.78rem;color:var(--muted);margin-bottom:4px;">${date}</div>
+          <div style="font-size:0.88rem;color:var(--text);white-space:pre-wrap;">${escHtml(item.input.slice(0, 120))}${item.input.length > 120 ? '…' : ''}</div>`;
+        d.title = 'Klicken zum Wiederherstellen';
+        d.onclick = () => {
+          notesInput.value = item.input;
+          cleanupOutput.textContent = item.output;
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        };
+        historyList.appendChild(d);
+      }
+    }
+
+    function escHtml(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    document.getElementById('topbarLogoutBtn').addEventListener('click', async (e) => {
+      e.preventDefault();
+      await fetch('/auth/logout', { method: 'POST' });
+      window.location.href = '/login';
+    });
+  </script>
+</body>
+</html>

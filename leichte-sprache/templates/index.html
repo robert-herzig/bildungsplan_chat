@@ -3,27 +3,32 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Einfache/Leichte Sprache Assistent</title>
+  <title>Leichte &amp; Einfache Sprache – EulenAI</title>
   <link rel="stylesheet" href="./static/style.css">
 </head>
 <body>
   <nav class="site-topbar">
     <a href="/" class="brand"><img src="/shared/static/img/euletranspa.png" alt=""><span>Eulen<span class="gold">AI</span></span></a>
     <div class="site-topbar-nav">
-      <a href="/">Home</a>
       <a href="/bildungsplan/">Bildungsplan</a>
+      <a href="/bildungsplan/conversation">Elterngespräch</a>
+      <a href="/leichte-sprache/">Leichte Sprache</a>
+      <a href="/leichte-sprache/notizen">Notizen</a>
+      <a href="#" id="topbarLogoutBtn" style="color:#C9A84C;">Abmelden</a>
     </div>
   </nav>
   <div class="container">
     <header class="hero">
       <div class="hero-top">
-        <h1>Leichte Sprache & Notizen-Assistent</h1>
-        <button id="settingsBtn" class="icon-btn" aria-label="Einstellungen">⚙</button>
+        <h1>Leichte &amp; Einfache Sprache</h1>
+        <div style="display:flex;gap:8px;">
+          <button id="historyBtn" class="icon-btn" aria-label="Verlauf" title="Verlauf anzeigen">📋</button>
+          <button id="settingsBtn" class="icon-btn" aria-label="Einstellungen">⚙</button>
+        </div>
       </div>
       <div class="tab-bar primary-tabs">
         <button class="tab-btn active" data-tab="leichte">Leichte Sprache</button>
         <button class="tab-btn" data-tab="einfache">Einfache Sprache</button>
-        <button class="tab-btn" data-tab="cleanup">Notizen ausformulieren</button>
       </div>
     </header>
 
@@ -52,27 +57,16 @@
         </section>
       </div>
 
-      <div id="cleanupPanel" class="tab-panel">
-        <section class="card">
-          <label for="notesInput">Schnelle Notizen</label>
-          <textarea id="notesInput" rows="10" placeholder="Schreibe hier deine Stichworte, Ideen oder chaotischen Sätze …"></textarea>
-          <p class="helper-text">Wir verwandeln deine Skizze in gut lesbares Deutsch mit korrekter Rechtschreibung und Zeichensetzung.</p>
-          <div class="actions">
-            <button id="cleanupBtn" class="primary">Bereinigen</button>
-          </div>
-          <div id="cleanupLoading" class="loading" style="display:none;">Formuliere sauber …</div>
-          <div id="cleanupError" class="error" style="display:none;"></div>
-        </section>
-
-        <section class="card">
-          <div class="output-header">
-            <h2>Überarbeiteter Text</h2>
-            <button id="copyCleanupBtn" class="secondary">Kopieren</button>
-          </div>
-          <div id="cleanupOutput" class="output"></div>
-        </section>
-      </div>
     </main>
+
+    <!-- Translation history -->
+    <section id="historySection" class="card" style="display:none;">
+      <div class="output-header">
+        <h2>Verlauf</h2>
+        <button id="clearHistoryBtn" class="secondary">Leeren</button>
+      </div>
+      <div id="historyList"></div>
+    </section>
 
     <footer>
       <small>Eulen<strong style="color:var(--accent)">AI</strong> &middot; KI-Werkzeuge für Lehrkräfte &middot; eulenai.de</small>
@@ -85,7 +79,6 @@
       <div class="prompt-option-group">
         <button class="prompt-option active" data-prompt-option="leichte">Leichte Sprache</button>
         <button class="prompt-option" data-prompt-option="einfache">Einfache Sprache</button>
-        <button class="prompt-option" data-prompt-option="cleanup">Notizen ausformulieren</button>
       </div>
       <p class="helper-text lock-note">System‑Prompts sind aktuell nur zur Ansicht freigegeben. Änderungen folgen später für Admins.</p>
       <textarea id="promptEditor" rows="14" readonly aria-readonly="true" class="prompt-viewer"></textarea>
@@ -113,15 +106,8 @@
     const promptModal = document.getElementById('promptModal');
     const promptEditor = document.getElementById('promptEditor');
     const promptTypeLabel = document.getElementById('promptTypeLabel');
-    const notesInput = document.getElementById('notesInput');
-    const cleanupBtn = document.getElementById('cleanupBtn');
-    const cleanupOutput = document.getElementById('cleanupOutput');
-    const cleanupLoading = document.getElementById('cleanupLoading');
-    const cleanupError = document.getElementById('cleanupError');
-    const copyCleanupBtn = document.getElementById('copyCleanupBtn');
     const tabButtons = document.querySelectorAll('.tab-btn');
     const translatePanel = document.getElementById('translatePanel');
-    const cleanupPanel = document.getElementById('cleanupPanel');
     const inputLabel = document.getElementById('inputLabel');
     const outputHeading = document.getElementById('outputHeading');
     const settingsBtn = document.getElementById('settingsBtn');
@@ -139,22 +125,15 @@
     }
 
     function promptLabel(type) {
-      if (type === 'cleanup') return 'Notizen ausformulieren';
       return labelForMode(type);
     }
 
     function setPrimaryTab(tab) {
       currentTab = tab;
       tabButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab));
-      if (tab === 'cleanup') {
-        translatePanel.classList.remove('active');
-        cleanupPanel.classList.add('active');
-      } else {
-        promptType = tab;
-        translatePanel.classList.add('active');
-        cleanupPanel.classList.remove('active');
-        updateModeLabels();
-      }
+      promptType = tab;
+      translatePanel.classList.add('active');
+      updateModeLabels();
     }
 
     function updateModeLabels() {
@@ -165,7 +144,7 @@
 
     // Auto-select tab from URL ?tab= parameter
     const urlTab = new URLSearchParams(window.location.search).get('tab');
-    setPrimaryTab(urlTab && ['leichte', 'einfache', 'cleanup'].includes(urlTab) ? urlTab : 'leichte');
+    setPrimaryTab(urlTab && ['leichte', 'einfache'].includes(urlTab) ? urlTab : 'leichte');
 
     translateBtn.onclick = async () => {
       errorDiv.style.display = 'none';
@@ -202,6 +181,7 @@
                 .replace(/([\.\!?])([A-Za-zÀ-ÿ])/g, '$1 $2')
                 .replace(/([,:;])([A-Za-zÀ-ÿ])/g, '$1 $2');
               outputText.textContent = finalTxt;
+              saveToHistory(text, finalTxt, promptType);
               translateBtn.disabled = false;
               loading.style.display = 'none';
               return;
@@ -234,7 +214,9 @@
           errorDiv.textContent = data.error || 'Fehler';
           errorDiv.style.display = 'block';
         } else {
-          outputText.textContent = data.result || '';
+          const result = data.result || '';
+          outputText.textContent = result;
+          saveToHistory(text, result, promptType);
         }
         translateBtn.disabled = false;
         loading.style.display = 'none';
@@ -249,51 +231,9 @@
       setTimeout(() => (copyOutputBtn.textContent = 'Kopieren'), 1500);
     };
 
-    cleanupBtn.onclick = async () => {
-      cleanupError.style.display = 'none';
-      cleanupOutput.textContent = '';
-      const text = notesInput.value.trim();
-      if (!text) {
-        cleanupError.textContent = 'Bitte zuerst deine Notizen eingeben.';
-        cleanupError.style.display = 'block';
-        return;
-      }
-      cleanupBtn.disabled = true;
-      cleanupLoading.style.display = 'block';
-      try {
-        const r = await fetch(BASE_PATH + '/cleanup', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text })
-        });
-        const data = await r.json().catch(() => ({}));
-        if (!r.ok || data.error) {
-          cleanupError.textContent = (data && data.error) || 'Fehler beim Bereinigen.';
-          cleanupError.style.display = 'block';
-        } else {
-          cleanupOutput.textContent = data.result || '';
-        }
-      } catch (err) {
-        cleanupError.textContent = err && err.message ? err.message : 'Unbekannter Fehler.';
-        cleanupError.style.display = 'block';
-      } finally {
-        cleanupBtn.disabled = false;
-        cleanupLoading.style.display = 'none';
-      }
-    };
-
-    copyCleanupBtn.onclick = async () => {
-      const txt = cleanupOutput.innerText.trim();
-      if (!txt) return;
-      await navigator.clipboard.writeText(txt);
-      copyCleanupBtn.textContent = 'Kopiert!';
-      setTimeout(() => (copyCleanupBtn.textContent = 'Kopieren'), 1500);
-    };
-
     settingsBtn.onclick = () => {
-      const initial = currentTab === 'cleanup' ? 'cleanup' : promptType;
       promptModal.style.display = 'block';
-      setPromptOption(initial);
+      setPromptOption(promptType);
     };
 
     promptOptionButtons.forEach(btn => btn.addEventListener('click', () => setPromptOption(btn.dataset.promptOption)));
@@ -333,6 +273,69 @@
       } catch {
         promptEditor.value = '';
       }
+    }
+
+    document.getElementById('topbarLogoutBtn').addEventListener('click', async (e) => {
+      e.preventDefault();
+      await fetch('/auth/logout', { method: 'POST' });
+      window.location.href = '/login';
+    });
+
+    // ── Translation history (localStorage) ──
+    const HISTORY_KEY = 'eulenai_translate_history';
+    const MAX_HIST = 8;
+    const historyBtn = document.getElementById('historyBtn');
+    const historySection = document.getElementById('historySection');
+    const historyList = document.getElementById('historyList');
+
+    historyBtn.onclick = () => {
+      if (historySection.style.display === 'none') {
+        renderHistory();
+        historySection.style.display = '';
+      } else {
+        historySection.style.display = 'none';
+      }
+    };
+
+    document.getElementById('clearHistoryBtn').onclick = () => {
+      localStorage.removeItem(HISTORY_KEY);
+      renderHistory();
+    };
+
+    function saveToHistory(input, output, mode) {
+      const hist = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+      hist.unshift({ input, output, mode, ts: Date.now() });
+      hist.splice(MAX_HIST);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(hist));
+      if (historySection.style.display !== 'none') renderHistory();
+    }
+
+    function renderHistory() {
+      const hist = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
+      if (hist.length === 0) {
+        historyList.innerHTML = '<p style="color:var(--muted);font-size:0.88rem;padding:8px 0;">Noch kein Verlauf.</p>';
+        return;
+      }
+      historyList.innerHTML = '';
+      for (const item of hist) {
+        const d = document.createElement('div');
+        d.style.cssText = 'border-top:1px solid var(--border);padding:10px 0;cursor:pointer;';
+        const date = new Date(item.ts).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+        const modeLabel = item.mode === 'einfache' ? 'Einfache Sprache' : 'Leichte Sprache';
+        d.innerHTML = `<div style="font-size:0.78rem;color:var(--muted);margin-bottom:4px;">${date} &middot; ${modeLabel}</div>
+          <div style="font-size:0.88rem;color:var(--text);">${escHtml(item.input.slice(0, 100))}${item.input.length > 100 ? '…' : ''}</div>`;
+        d.title = 'Klicken zum Wiederherstellen';
+        d.onclick = () => {
+          inputText.value = item.input;
+          outputText.textContent = item.output;
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        };
+        historyList.appendChild(d);
+      }
+    }
+
+    function escHtml(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
     }
   </script>
 </body>

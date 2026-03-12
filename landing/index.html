@@ -37,9 +37,9 @@
     .topbar {
       background: var(--near-black);
       color: var(--white);
-      padding: 14px 32px;
+      padding: 0 32px;
       display: flex;
-      align-items: center;
+      align-items: stretch;
       justify-content: space-between;
       border-bottom: 3px solid var(--gold);
     }
@@ -48,6 +48,7 @@
       display: flex;
       align-items: center;
       gap: 12px;
+      padding: 14px 0;
       text-decoration: none;
       color: var(--white);
     }
@@ -70,7 +71,8 @@
 
     .topbar-nav {
       display: flex;
-      gap: 24px;
+      align-items: stretch;
+      gap: 0;
     }
 
     .topbar-nav a {
@@ -78,12 +80,14 @@
       text-decoration: none;
       font-size: 0.9rem;
       font-weight: 500;
-      transition: color 0.2s;
-      position: relative;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      transition: background 0.2s;
     }
 
     .topbar-nav a:hover {
-      color: var(--gold);
+      background: rgba(201, 168, 76, 0.15);
     }
 
     /* ── Hero ─────────────────────────────── */
@@ -347,7 +351,7 @@
         <span class="tool-link">Zum Übersetzer →</span>
       </a>
 
-      <a href="/leichte-sprache/?tab=cleanup" class="tool-card">
+      <a href="/leichte-sprache/notizen" class="tool-card">
         <div class="tool-icon">✏️</div>
         <h3>Notizen ausformulieren</h3>
         <p>Verwandle chaotische Stichpunkte und Notizen in fehlerfreie, professionelle Texte. Ideal für Sitzungsnotizen, Beobachtungsaufzeichnungen und interne Berichte.</p>

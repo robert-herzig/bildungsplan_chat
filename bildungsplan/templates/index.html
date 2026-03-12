@@ -141,8 +141,11 @@
   <nav class="site-topbar">
     <a href="/" class="brand"><img src="/shared/static/img/euletranspa.png" alt=""><span>Eulen<span class="gold">AI</span></span></a>
     <div class="site-topbar-nav">
-      <a href="/">Home</a>
+      <a href="/bildungsplan/">Bildungsplan</a>
+      <a href="/bildungsplan/conversation">Elterngespräch</a>
       <a href="/leichte-sprache/">Leichte Sprache</a>
+      <a href="/leichte-sprache/notizen">Notizen</a>
+      <a href="#" id="topbarLogoutBtn" style="color:#C9A84C;">Abmelden</a>
     </div>
   </nav>
   <div class="app-layout">
@@ -162,7 +165,6 @@
           <p class="subtitle">Dein KI-gestützter Helfer für den Bildungsplan 2022 – Förderschwerpunkt Geistige Entwicklung</p>
         </div>
         <div class="hero-actions">
-          <a href="./conversation" class="icon-btn" aria-label="Elterngespräch-Simulator" title="Elterngespräch-Simulator">🗣️</a>
           <button id="historyBtn" class="icon-btn" aria-label="Gesprächsverlauf" title="Gespeicherte Gespräche">📋</button>
           <button id="endeBtn" class="icon-btn" aria-label="Gespräch beenden & Erinnerungen extrahieren" title="Gespräch beenden">🏁</button>
           <button id="memoriesBtn" class="icon-btn" aria-label="Erinnerungen" title="Erinnerungen verwalten">🧠</button>
@@ -1440,6 +1442,12 @@
     });
 
     // ── Logout ──
+    document.getElementById('topbarLogoutBtn').addEventListener('click', async (e) => {
+      e.preventDefault();
+      await fetch(BASE_PATH + '/auth/logout', { method: 'POST' });
+      window.location.href = '/login';
+    });
+
     document.getElementById('logoutBtn').addEventListener('click', async () => {
       if (!confirm('Wirklich abmelden?')) return;
       await fetch(BASE_PATH + '/auth/logout', { method: 'POST' });

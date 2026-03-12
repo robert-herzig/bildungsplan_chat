@@ -39,35 +39,34 @@ button, input, textarea, select {
 /* ── Site-wide top bar ──────────────────────────────── */
 .site-topbar {
     background: var(--near-black);
-    padding: 10px 24px;
+    padding: 0 32px;
     display: flex;
-    align-items: center;
+    align-items: stretch;
     justify-content: space-between;
     border-bottom: 3px solid var(--accent);
+    flex-shrink: 0;
 }
 
 .site-topbar a {
     color: #CCCCCC;
     text-decoration: none;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
     font-weight: 500;
-    transition: color 0.2s;
 }
-
-.site-topbar a:hover { color: var(--accent); }
 
 .site-topbar .brand {
     color: #FFFFFF;
     font-weight: 700;
-    font-size: 1rem;
+    font-size: 1.3rem;
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 12px;
+    padding: 14px 0;
 }
 
 .site-topbar .brand img {
-    width: 24px;
-    height: 24px;
+    width: 36px;
+    height: 36px;
     object-fit: contain;
 }
 
@@ -75,7 +74,19 @@ button, input, textarea, select {
 
 .site-topbar-nav {
     display: flex;
-    gap: 16px;
+    align-items: stretch;
+    gap: 0;
+}
+
+.site-topbar-nav a {
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    transition: background 0.2s;
+}
+
+.site-topbar-nav a:hover {
+    background: rgba(201, 168, 76, 0.15);
 }
 
 /* ── Header ──────────────────────────────────────────── */

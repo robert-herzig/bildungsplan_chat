@@ -21,6 +21,16 @@ app.get("/", async (req, res) => {
   }
 });
 
+app.get("/notizen", async (req, res) => {
+  try {
+    const html = await fs.readFile(path.join(__dirname, "templates", "notizen.html"), "utf-8");
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send(html);
+  } catch (e) {
+    res.status(500).send("Fehler beim Laden der Seite.");
+  }
+});
+
 // Prompt helpers
 const PROMPT_PATH_LEICHTE = path.join(__dirname, "system_prompt_leichte.txt");
 const PROMPT_PATH_EINFACHE = path.join(__dirname, "system_prompt_einfache.txt");

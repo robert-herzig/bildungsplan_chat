@@ -11,9 +11,20 @@
     <a href="/" class="brand"><img src="/shared/static/img/euletranspa.png" alt=""><span>Eulen<span class="gold">AI</span></span></a>
     <div class="site-topbar-nav">
       <a href="/bildungsplan/">Bildungsplan</a>
+      <a href="/bildungsplan/conversation">Elterngespräch</a>
       <a href="/leichte-sprache/">Leichte Sprache</a>
+      <a href="/leichte-sprache/notizen">Notizen</a>
+      <a href="#" id="topbarLogoutBtn" style="color:#C9A84C;">Abmelden</a>
     </div>
   </nav>
+  <div class="app-layout">
+  <aside class="sim-sidebar collapsed" id="simSidebar">
+    <div class="sim-sidebar-header">
+      <span>Gespräche</span>
+      <button class="sim-sidebar-new" id="simNewBtn" title="Neues Gespräch">+ Neu</button>
+    </div>
+    <div id="simSidebarList" class="sim-sidebar-list"></div>
+  </aside>
   <div class="container">
     <!-- ── Header ──────────────────────────────────── -->
     <header class="hero">
@@ -23,7 +34,7 @@
           <p class="subtitle">Trainiere Elterngespräche an einem SBBZ GENT – Berufsschulstufe</p>
         </div>
         <div class="hero-actions">
-          <a href="./" class="icon-btn" title="Zurück zum Assistenten">📚</a>
+          <button id="simHistoryBtn" class="icon-btn" title="Gesprächsverlauf">📋</button>
           <button id="presetsBtn" class="icon-btn" title="Persönlichkeiten verwalten">⚙</button>
         </div>
       </div>
@@ -85,6 +96,7 @@
       </div>
     </div>
   </div>
+  </div><!-- /app-layout -->
 
   <!-- ── Custom Presets Modal ──────────────────────── -->
   <div id="presetsModal" class="modal hidden">
@@ -146,6 +158,7 @@ const BASE = (() => {
 let allPresets = [];
 let currentPreset = null;
 let conversationHistory = [];
+let currentSimConvId = null;  // ID of the currently active/saved simulator conversation
 let isRecording = false;
 let mediaRecorder = null;
 let audioChunks = [];
@@ -252,6 +265,10 @@ function setupEventListeners() {
 // ── Persona Change ────────────────────────────────────────────
 function onPersonaChange() {
   const id = document.getElementById('personaSelect').value;
+  // Save current conversation before switching personas
+  if (conversationHistory && conversationHistory.length >= 2 && typeof saveSimConversation === 'function') {
+    saveSimConversation();
+  }
   if (!id) {
     currentPreset = null;
     document.getElementById('scenarioBox').classList.add('hidden');
@@ -266,6 +283,7 @@ function onPersonaChange() {
   document.getElementById('scenarioDesc').textContent = currentPreset.description;
   document.getElementById('scenarioBox').classList.remove('hidden');
 
+  currentSimConvId = null;
   resetConversation();
 }
 
@@ -849,6 +867,129 @@ function blobToBase64(blob) {
     reader.readAsDataURL(blob);
   });
 }
+
+document.getElementById('topbarLogoutBtn').addEventListener('click', async (e) => {
+  e.preventDefault();
+  await fetch('/auth/logout', { method: 'POST' });
+  window.location.href = '/login';
+});
+
+// ── Simulator conversation sidebar ─────────────────────────
+const simSidebar = document.getElementById('simSidebar');
+const simSidebarList = document.getElementById('simSidebarList');
+const simHistoryBtn = document.getElementById('simHistoryBtn');
+const simNewBtn = document.getElementById('simNewBtn');
+
+simHistoryBtn.onclick = () => {
+  simSidebar.classList.toggle('collapsed');
+  if (!simSidebar.classList.contains('collapsed')) renderSimSidebar();
+};
+
+simNewBtn.onclick = () => {
+  if (conversationHistory.length >= 2) saveSimConversation();
+  resetConversation();
+  currentSimConvId = null;
+  document.querySelectorAll('.sim-sidebar-item').forEach(el => el.classList.remove('active'));
+};
+
+async function saveSimConversation() {
+  if (!conversationHistory || conversationHistory.length < 2) return;
+  const title = '🗣️ ' + (currentPreset ? currentPreset.name : 'Gespräch');
+  const payload = new Blob(
+    [JSON.stringify({ id: currentSimConvId, title, messages: conversationHistory })],
+    { type: 'application/json' }
+  );
+  try {
+    const r = await fetch(BASE + '/conversations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: currentSimConvId, title, messages: conversationHistory }),
+    });
+    const data = await r.json();
+    if (data.ok && data.id) currentSimConvId = data.id;
+  } catch {}
+}
+
+async function renderSimSidebar() {
+  simSidebarList.innerHTML = '<div class="sim-sidebar-empty">Lade …</div>';
+  try {
+    const r = await fetch(BASE + '/conversations');
+    const data = await r.json();
+    // Only show simulator conversations (prefixed with 🗣️)
+    const convos = (data.conversations || []).filter(c => c.title.startsWith('🗣️'));
+    if (convos.length === 0) {
+      simSidebarList.innerHTML = '<div class="sim-sidebar-empty">Noch keine gespeicherten Gespräche.</div>';
+      return;
+    }
+    simSidebarList.innerHTML = '';
+    for (const c of convos) {
+      const item = document.createElement('div');
+      item.className = 'sim-sidebar-item' + (c.id === currentSimConvId ? ' active' : '');
+      item.dataset.id = c.id;
+      const dateStr = new Date(c.updated).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' });
+      item.innerHTML = `
+        <div class="sim-sidebar-item-title">${escHtmlSim(c.title)}</div>
+        <div class="sim-sidebar-item-meta">${dateStr} · ${c.messageCount} Nachr.</div>
+        <button class="sim-sidebar-del" data-id="${c.id}" title="Löschen">✕</button>
+      `;
+      item.addEventListener('click', (e) => {
+        if (e.target.classList.contains('sim-sidebar-del')) return;
+        loadSimConversation(c.id);
+      });
+      item.querySelector('.sim-sidebar-del').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (!confirm('Gespräch wirklich löschen?')) return;
+        await fetch(BASE + '/conversations/' + c.id, { method: 'DELETE' });
+        if (currentSimConvId === c.id) { conversationHistory = []; currentSimConvId = null; }
+        await renderSimSidebar();
+      });
+      simSidebarList.appendChild(item);
+    }
+  } catch {
+    simSidebarList.innerHTML = '<div class="sim-sidebar-empty">Fehler beim Laden.</div>';
+  }
+}
+
+async function loadSimConversation(id) {
+  try {
+    const r = await fetch(BASE + '/conversations/' + id);
+    const data = await r.json();
+    if (!data.conversation) return;
+    const convo = data.conversation;
+    conversationHistory = convo.messages || [];
+    currentSimConvId = convo.id;
+    stopAudio();
+    const transcript = document.getElementById('transcript');
+    transcript.innerHTML = '';
+    document.getElementById('welcomeMsg') && (document.getElementById('welcomeMsg').style.display = 'none');
+    for (const msg of conversationHistory) {
+      addTranscriptBubble(msg.role === 'user' ? 'teacher' : 'parent', msg.content);
+    }
+    document.querySelectorAll('.sim-sidebar-item').forEach(el => {
+      el.classList.toggle('active', el.dataset.id === id);
+    });
+    setStatus('Gespräch geladen – wähle oben ein Elternteil und setze das Gespräch fort');
+    setBusy(false);
+  } catch (e) {
+    console.warn('Load sim conversation failed:', e);
+  }
+}
+
+function escHtmlSim(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Save on page hide
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && conversationHistory && conversationHistory.length >= 2 && currentPreset) {
+    const title = '🗣️ ' + currentPreset.name;
+    const payload = new Blob(
+      [JSON.stringify({ id: currentSimConvId, title, messages: conversationHistory })],
+      { type: 'application/json' }
+    );
+    navigator.sendBeacon(BASE + '/conversations', payload);
+  }
+});
 </script>
 </body>
 </html>
