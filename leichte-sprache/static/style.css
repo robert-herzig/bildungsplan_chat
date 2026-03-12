@@ -17,12 +17,19 @@
 
 * { box-sizing: border-box; }
 
+html {
+    height: 100%;
+    overflow-x: hidden;
+}
+
 body {
     margin: 0;
     font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
     color: var(--text);
     min-height: 100vh;
+    min-height: 100dvh;
     background: var(--bg);
+    overflow-x: hidden;
 }
 
 button, input, textarea, select {
@@ -45,6 +52,8 @@ button, input, textarea, select {
     justify-content: space-between;
     border-bottom: 3px solid var(--accent);
     flex-shrink: 0;
+    min-width: 0;
+    overflow: hidden;
 }
 
 .site-topbar a {
@@ -62,6 +71,8 @@ button, input, textarea, select {
     align-items: center;
     gap: 12px;
     padding: 14px 0;
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 .site-topbar .brand img {
@@ -76,6 +87,15 @@ button, input, textarea, select {
     display: flex;
     align-items: stretch;
     gap: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-shrink: 1;
+    min-width: 0;
+}
+
+.site-topbar-nav::-webkit-scrollbar {
+    display: none;
 }
 
 .site-topbar-nav a {
@@ -83,6 +103,8 @@ button, input, textarea, select {
     align-items: center;
     padding: 0 16px;
     transition: background 0.2s;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .site-topbar-nav a:hover {
@@ -379,14 +401,104 @@ footer {
     opacity: 0.5;
     cursor: not-allowed;
 }
+/* ── History sidebar overlay ─────────────────────────────────────── */
+.ls-sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 298;
+}
+.ls-sidebar-backdrop.open { display: block; }
 
+.ls-sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 280px;
+    max-width: 85vw;
+    background: var(--card);
+    border-right: 2px solid var(--accent);
+    display: flex;
+    flex-direction: column;
+    z-index: 299;
+    transform: translateX(-100%);
+    transition: transform 0.25s ease;
+    box-shadow: 4px 0 16px rgba(0, 0, 0, 0.15);
+}
+.ls-sidebar.open { transform: translateX(0); }
+
+.ls-sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+    font-size: 0.9rem;
+    flex-shrink: 0;
+    white-space: nowrap;
+    background: var(--near-black);
+    color: #fff;
+}
+.ls-sidebar-close {
+    background: none;
+    border: none;
+    color: #ccc;
+    cursor: pointer;
+    font-size: 1.1rem;
+    padding: 2px 6px;
+    line-height: 1;
+}
+.ls-sidebar-close:hover { color: #fff; }
+
+.ls-sidebar-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 4px 0;
+}
+.ls-sidebar-item {
+    padding: 10px 14px;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.15s;
+}
+.ls-sidebar-item:hover {
+    background: var(--gold-light);
+    border-left-color: var(--accent);
+}
+.ls-sidebar-item-date {
+    font-size: 0.72rem;
+    color: var(--muted);
+    margin-bottom: 3px;
+}
+.ls-sidebar-item-text {
+    font-size: 0.82rem;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.ls-sidebar-empty {
+    padding: 16px 14px;
+    color: var(--muted);
+    font-size: 0.82rem;
+}
+.ls-sidebar-footer {
+    border-top: 1px solid var(--border);
+    padding: 10px 12px;
+    flex-shrink: 0;
+}
 /* ── Responsive ──────────────────────────────────────── */
 @media (max-width: 640px) {
     .container { padding: 0 16px 20px; }
     .card { padding: 16px; }
     .primary, .secondary, .prompt-option { width: 100%; text-align: center; }
     .tab-btn { flex: 1; }
-    .site-topbar { padding: 8px 16px; }
-    .site-topbar-nav { gap: 8px; }
-    .site-topbar-nav a { font-size: 0.78rem; }
+    .site-topbar { padding: 0 12px; }
+    .site-topbar .brand { padding: 10px 0; font-size: 1rem; gap: 8px; }
+    .site-topbar .brand img { width: 28px; height: 28px; }
+    .site-topbar-nav a { padding: 0 10px; font-size: 0.8rem; }
 }

@@ -23,14 +23,18 @@
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    html { overflow-x: hidden; }
+
     body {
       font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
       background: var(--off-white);
       color: var(--text);
       line-height: 1.6;
       min-height: 100vh;
+      min-height: 100dvh;
       display: flex;
       flex-direction: column;
+      overflow-x: hidden;
     }
 
     /* ── Top bar ─────────────────────────── */
@@ -42,6 +46,8 @@
       align-items: stretch;
       justify-content: space-between;
       border-bottom: 3px solid var(--gold);
+      min-width: 0;
+      overflow: hidden;
     }
 
     .topbar-brand {
@@ -51,6 +57,8 @@
       padding: 14px 0;
       text-decoration: none;
       color: var(--white);
+      flex-shrink: 0;
+      white-space: nowrap;
     }
 
     .topbar-brand img {
@@ -73,6 +81,15 @@
       display: flex;
       align-items: stretch;
       gap: 0;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      flex-shrink: 1;
+      min-width: 0;
+    }
+
+    .topbar-nav::-webkit-scrollbar {
+      display: none;
     }
 
     .topbar-nav a {
@@ -84,6 +101,8 @@
       align-items: center;
       padding: 0 16px;
       transition: background 0.2s;
+      white-space: nowrap;
+      flex-shrink: 0;
     }
 
     .topbar-nav a:hover {
@@ -285,9 +304,10 @@
 
     /* ── Responsive ───────────────────────── */
     @media (max-width: 640px) {
-      .topbar { padding: 12px 16px; }
-      .topbar-nav { gap: 12px; }
-      .topbar-nav a { font-size: 0.82rem; }
+      .topbar { padding: 0 12px; }
+      .topbar-brand { padding: 10px 0; font-size: 1rem; gap: 8px; }
+      .topbar-brand img { width: 28px; height: 28px; }
+      .topbar-nav a { padding: 0 10px; font-size: 0.82rem; }
       .hero { padding: 48px 20px 40px; }
       .hero-logo { width: 72px; height: 72px; }
       .section { padding: 40px 20px; }

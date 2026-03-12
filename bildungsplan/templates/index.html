@@ -104,6 +104,17 @@
     .sidebar-item:hover .sidebar-del { opacity: 1; }
     .sidebar-del:hover { color: var(--danger); }
     .sidebar-empty { padding: 16px 12px; color: var(--muted); font-size: 0.82rem; }
+    .sidebar-close-btn {
+      background: none;
+      border: none;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 1rem;
+      padding: 2px 6px;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+    .sidebar-close-btn:hover { color: var(--danger); }
 
     /* Override container when inside app-layout */
     .app-layout .container {
@@ -145,6 +156,7 @@
       <a href="/bildungsplan/conversation">Elterngespräch</a>
       <a href="/leichte-sprache/">Leichte Sprache</a>
       <a href="/leichte-sprache/notizen">Notizen</a>
+      <a href="#" id="adminNavBtn" style="display:none;">Verwaltung</a>
       <a href="#" id="topbarLogoutBtn" style="color:#C9A84C;">Abmelden</a>
     </div>
   </nav>
@@ -152,7 +164,10 @@
   <aside class="sidebar collapsed" id="sidebar">
     <div class="sidebar-header">
       <span>Gespräche</span>
-      <button class="sidebar-new-btn" id="newChatBtn" title="Neues Gespräch starten">+ Neu</button>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <button class="sidebar-new-btn" id="newChatBtn" title="Neues Gespräch starten">+ Neu</button>
+        <button class="sidebar-close-btn" id="sidebarCloseBtn" title="Schließen">✕</button>
+      </div>
     </div>
     <div id="sidebarList" class="sidebar-list"></div>
   </aside>
@@ -166,12 +181,9 @@
         </div>
         <div class="hero-actions">
           <button id="historyBtn" class="icon-btn" aria-label="Gesprächsverlauf" title="Gespeicherte Gespräche">📋</button>
-          <button id="endeBtn" class="icon-btn" aria-label="Gespräch beenden & Erinnerungen extrahieren" title="Gespräch beenden">🏁</button>
           <button id="memoriesBtn" class="icon-btn" aria-label="Erinnerungen" title="Erinnerungen verwalten">🧠</button>
-          <button id="usersBtn" class="icon-btn" aria-label="Benutzer" title="Benutzer verwalten">👥</button>
           <button id="settingsBtn" class="icon-btn" aria-label="Einstellungen" title="System-Prompt anpassen">⚙</button>
-          <button id="clearBtn" class="icon-btn" aria-label="Chat leeren" title="Neuer Chat">🗑</button>
-          <button id="logoutBtn" class="icon-btn" aria-label="Abmelden" title="Abmelden">🚪</button>
+          <button id="clearBtn" class="icon-btn" aria-label="Neues Gespräch" title="Neues Gespräch starten" style="font-size:1.5rem;line-height:1;font-weight:300;">+</button>
         </div>
       </div>
       <div id="dbInfo" class="db-info"></div>
@@ -253,28 +265,67 @@
 
   <div id="toastBar"></div>
 
-  <!-- User Management Modal -->
-  <div id="usersModal" class="modal" style="display:none;">
-    <div class="modal-content" style="max-width:520px;">
-      <h3>👥 Benutzer verwalten</h3>
-      <p class="muted">Erstelle neue Benutzer oder lösche bestehende.</p>
-      <div id="usersList" class="memories-list" style="max-height:250px;overflow-y:auto;margin-bottom:12px;"></div>
-      <details style="margin-bottom:12px;">
-        <summary style="cursor:pointer;color:var(--accent2);font-size:0.95rem;">+ Neuen Benutzer anlegen</summary>
-        <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
-          <input type="text" id="newUsername" placeholder="Benutzername" class="memory-input">
-          <input type="text" id="newDisplayName" placeholder="Anzeigename (optional)" class="memory-input">
-          <input type="password" id="newPassword" placeholder="Passwort (mind. 6 Zeichen)" class="memory-input">
-          <button id="addUserBtn" class="primary small-btn" style="align-self:flex-start;">Benutzer erstellen</button>
+  <!-- Admin Modal -->
+  <div id="adminModal" class="modal" style="display:none;">
+    <div class="modal-content" style="max-width:560px;">
+      <h3>⚙ Admin-Bereich</h3>
+      <div class="admin-tabs">
+        <button class="admin-tab-btn active" data-tab="users">👥 Nutzer</button>
+        <button class="admin-tab-btn" data-tab="models">🤖 Modelle</button>
+        <button class="admin-tab-btn" data-tab="apikey">🔑 API-Schlüssel</button>
+      </div>
+
+      <!-- Nutzer tab -->
+      <div class="admin-tab-panel" id="adminTab-users">
+        <p class="muted" style="margin:8px 0 12px;">Erstelle neue Benutzer oder lösche bestehende.</p>
+        <div id="usersList" class="memories-list" style="max-height:220px;overflow-y:auto;margin-bottom:12px;"></div>
+        <details style="margin-bottom:4px;">
+          <summary style="cursor:pointer;color:var(--accent2);font-size:0.95rem;">+ Neuen Benutzer anlegen</summary>
+          <div style="display:flex;flex-direction:column;gap:8px;margin-top:8px;">
+            <input type="text" id="newUsername" placeholder="Benutzername" class="memory-input">
+            <input type="text" id="newDisplayName" placeholder="Anzeigename (optional)" class="memory-input">
+            <input type="password" id="newPassword" placeholder="Passwort (mind. 6 Zeichen)" class="memory-input">
+            <button id="addUserBtn" class="primary small-btn" style="align-self:flex-start;">Benutzer erstellen</button>
+          </div>
+        </details>
+      </div>
+
+      <!-- Modelle tab -->
+      <div class="admin-tab-panel" id="adminTab-models" style="display:none;">
+        <p class="muted" style="margin:8px 0 12px;">Legt fest welche Mistral-Modelle für Chat und Elterngespräch verwendet werden. Änderungen werden sofort wirksam.</p>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <label style="font-size:0.9rem;font-weight:600;">Chat-Modell (Bildungsplan-Assistent)
+            <input type="text" id="adminModel" class="memory-input" style="margin-top:4px;" placeholder="z.B. mistral-medium-latest">
+          </label>
+          <label style="font-size:0.9rem;font-weight:600;">Konversations-Modell (Elterngespräch)
+            <input type="text" id="adminConvModel" class="memory-input" style="margin-top:4px;" placeholder="z.B. mistral-medium-latest">
+          </label>
+          <button id="saveModelsBtn" class="primary small-btn" style="align-self:flex-start;">Speichern</button>
+          <p id="modelsStatus" class="muted" style="font-size:0.85rem;"></p>
         </div>
-      </details>
-      <div class="modal-actions">
-        <button id="closeUsersBtn" class="secondary">Schließen</button>
+      </div>
+
+      <!-- API-Schlüssel tab -->
+      <div class="admin-tab-panel" id="adminTab-apikey" style="display:none;">
+        <p class="muted" style="margin:8px 0 12px;">Ändert den Mistral API-Schlüssel. Wird verschlüsselt gespeichert und sofort aktiv.</p>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <p id="apiKeyHint" style="font-size:0.9rem;"></p>
+          <label style="font-size:0.9rem;font-weight:600;">Neuer API-Schlüssel
+            <input type="password" id="adminApiKey" class="memory-input" style="margin-top:4px;" placeholder="sk-..." autocomplete="new-password">
+          </label>
+          <button id="saveApiKeyBtn" class="primary small-btn" style="align-self:flex-start;">Speichern</button>
+          <p id="apiKeyStatus" class="muted" style="font-size:0.85rem;"></p>
+        </div>
+      </div>
+
+      <div class="modal-actions" style="margin-top:16px;">
+        <button id="closeAdminBtn" class="secondary">Schließen</button>
       </div>
     </div>
   </div>
 
   <script>
+    /* __SERVER_USER__ */
     // ── Base path detection (works behind reverse proxy) ──
     const BASE_PATH = (() => {
       const p = window.location.pathname;
@@ -334,21 +385,157 @@
     let streamAbortController = null;
 
     // ── Current user / admin detection ──
-    let currentUser = null;
-    let isAdmin = false;
+    let currentUser = window.__SERVER_USER__ || null;
+    let isAdmin = currentUser?.username === 'admin';
+    if (isAdmin) {
+      document.getElementById('adminNavBtn').style.display = '';
+    }
+
+    // Also keep async fetch to refresh currentUser for dynamic operations
     (async () => {
       try {
         const r = await fetch(BASE_PATH + '/auth/me');
         const data = await r.json();
-        currentUser = data.user;
-        isAdmin = currentUser?.username === 'admin';
-        if (!isAdmin) {
-          document.getElementById('usersBtn').style.display = 'none';
+        if (data.user) {
+          currentUser = data.user;
+          isAdmin = currentUser?.username === 'admin';
+          if (isAdmin) document.getElementById('adminNavBtn').style.display = '';
         }
       } catch { /* ignore */ }
     })();
 
-    // ── DB info ──
+    // ── Admin modal ──
+    const adminModal = document.getElementById('adminModal');
+    const adminNavBtn = document.getElementById('adminNavBtn');
+
+    adminNavBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      adminModal.style.display = 'flex';
+      switchAdminTab('users');
+      await loadAdminConfig();
+      await loadUsers();
+    });
+
+    document.getElementById('closeAdminBtn').onclick = () => { adminModal.style.display = 'none'; };
+    adminModal.addEventListener('click', (e) => { if (e.target === adminModal) adminModal.style.display = 'none'; });
+
+    // Tab switching
+    document.querySelectorAll('.admin-tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => switchAdminTab(btn.dataset.tab));
+    });
+    function switchAdminTab(tab) {
+      document.querySelectorAll('.admin-tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+      document.querySelectorAll('.admin-tab-panel').forEach(p => p.style.display = p.id === 'adminTab-' + tab ? '' : 'none');
+    }
+
+    // Load current config values
+    async function loadAdminConfig() {
+      try {
+        const r = await fetch(BASE_PATH + '/admin/config');
+        const data = await r.json();
+        document.getElementById('adminModel').value = data.model || '';
+        document.getElementById('adminConvModel').value = data.convModel || '';
+        document.getElementById('apiKeyHint').textContent = 'Aktuell: ' + (data.apiKeyHint || '(nicht gesetzt)');
+      } catch {}
+    }
+
+    // Save models
+    document.getElementById('saveModelsBtn').addEventListener('click', async () => {
+      const model = document.getElementById('adminModel').value.trim();
+      const convModel = document.getElementById('adminConvModel').value.trim();
+      const st = document.getElementById('modelsStatus');
+      if (!model && !convModel) { st.textContent = 'Bitte mindestens ein Modell angeben.'; return; }
+      const r = await fetch(BASE_PATH + '/admin/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, convModel }),
+      });
+      const data = await r.json();
+      st.textContent = r.ok ? `\u2713 Gespeichert: Chat=${data.model}, Konv=${data.convModel}` : (data.error || 'Fehler');
+    });
+
+    // Save API key
+    document.getElementById('saveApiKeyBtn').addEventListener('click', async () => {
+      const apiKey = document.getElementById('adminApiKey').value.trim();
+      const st = document.getElementById('apiKeyStatus');
+      if (!apiKey) { st.textContent = 'Bitte einen Schl\u00fcssel eingeben.'; return; }
+      const r = await fetch(BASE_PATH + '/admin/config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey }),
+      });
+      const data = await r.json();
+      if (r.ok) {
+        st.textContent = '\u2713 Gespeichert (' + data.apiKeyHint + ')';
+        document.getElementById('adminApiKey').value = '';
+        document.getElementById('apiKeyHint').textContent = 'Aktuell: ' + data.apiKeyHint;
+      } else {
+        st.textContent = data.error || 'Fehler';
+      }
+    });
+
+    // ── User management ──
+    const usersList = document.getElementById('usersList');
+
+    async function loadUsers() {
+      try {
+        const r = await fetch(BASE_PATH + '/auth/users');
+        const data = await r.json();
+        renderUsers(data.users || []);
+      } catch {
+        usersList.innerHTML = '<p class="muted">Fehler beim Laden.</p>';
+      }
+    }
+
+    function renderUsers(users) {
+      if (users.length === 0) {
+        usersList.innerHTML = '<p class="muted">Keine Benutzer gefunden.</p>';
+        return;
+      }
+      usersList.innerHTML = '';
+      for (const u of users) {
+        const item = document.createElement('div');
+        item.className = 'memory-item';
+        item.style.cssText = 'display:flex;align-items:center;gap:8px;';
+        const dateStr = u.created ? new Date(u.created).toLocaleDateString('de-DE') : '\u2013';
+        item.innerHTML = `
+          <div style="flex:1;">
+            <span style="font-weight:600;">${escapeHtml(u.displayName || u.username)}</span>
+            <span class="muted" style="font-size:0.8rem;"> @${escapeHtml(u.username)} &middot; seit ${dateStr}</span>
+          </div>
+          <button class="small-btn danger user-del-btn" data-id="${u.id}" data-name="${escapeHtml(u.username)}" title="L\u00f6schen">\ud83d\uddd1</button>
+        `;
+        usersList.appendChild(item);
+      }
+      usersList.querySelectorAll('.user-del-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          if (!confirm(`Benutzer "${btn.dataset.name}" wirklich l\u00f6schen?`)) return;
+          const r = await fetch(BASE_PATH + '/auth/users/' + btn.dataset.id, { method: 'DELETE' });
+          const data = await r.json();
+          if (!r.ok) { alert(data.error || 'Fehler'); return; }
+          await loadUsers();
+        });
+      });
+    }
+
+    document.getElementById('addUserBtn').addEventListener('click', async () => {
+      const username = document.getElementById('newUsername').value.trim();
+      const displayName = document.getElementById('newDisplayName').value.trim();
+      const password = document.getElementById('newPassword').value;
+      if (!username || !password) { alert('Benutzername und Passwort sind erforderlich.'); return; }
+      if (password.length < 6) { alert('Passwort muss mindestens 6 Zeichen lang sein.'); return; }
+      const r = await fetch(BASE_PATH + '/auth/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password, displayName: displayName || username }),
+      });
+      const data = await r.json();
+      if (!r.ok) { alert(data.error || 'Fehler'); return; }
+      document.getElementById('newUsername').value = '';
+      document.getElementById('newDisplayName').value = '';
+      document.getElementById('newPassword').value = '';
+      await loadUsers();
+    });
+
+    // ── Logout ──
     (async () => {
       try {
         const r = await fetch(BASE_PATH + '/db_info');
@@ -1051,10 +1238,13 @@
       img.src = url;
     }
 
-    // ── Clear chat ──
+    // ── New chat ──
     clearBtn.onclick = () => {
       stopAudio();
       setStatus('');
+      if (chatHistory.length >= 2) {
+        autoSaveConversation();
+      }
       startNewChat();
     };
 
@@ -1192,6 +1382,7 @@
     };
 
     newChatBtn.onclick = () => startNewChat();
+    document.getElementById('sidebarCloseBtn').onclick = () => sidebar.classList.add('collapsed');
 
     function startNewChat() {
       chatHistory = [];
@@ -1205,8 +1396,12 @@
       sidebarList.innerHTML = '<div class="sidebar-empty">Lade …</div>';
       try {
         const r = await fetch(BASE_PATH + '/conversations');
+        if (r.status === 401) {
+          sidebarList.innerHTML = '<div class="sidebar-empty">Sitzung abgelaufen. <a href="/login" style="color:var(--accent)">Neu anmelden →</a></div>';
+          return;
+        }
         const data = await r.json();
-        const convos = data.conversations || [];
+        const convos = (data.conversations || []).filter(c => !c.title.startsWith('🗣️'));
         if (convos.length === 0) {
           sidebarList.innerHTML = '<div class="sidebar-empty">Noch keine gespeicherten Gespräche.</div>';
           return;
@@ -1321,18 +1516,6 @@
       } catch { /* silent */ }
     }
 
-    // ── Ende button: start new chat immediately, extract in background ──
-    const endeBtn = document.getElementById('endeBtn');
-    endeBtn.onclick = () => {
-      if (chatHistory.length < 2) return;
-      const snapshot = chatHistory.slice(); // capture before clearing
-      autoSaveConversation();               // persist the conversation
-      startNewChat();
-      if (!sidebar.classList.contains('collapsed')) renderSidebar();
-      showToast('⏳ Analysiere Gespräch …', 60000);
-      extractAndSaveMemories(snapshot);     // fire-and-forget
-    };
-
     // ── Auto-extract when navigating away ──
     let extractOnHidePending = false;
     document.addEventListener('visibilitychange', () => {
@@ -1358,100 +1541,11 @@
       });
     });
 
-    // ── User Management modal ──
-    const usersBtn = document.getElementById('usersBtn');
-    const usersModal = document.getElementById('usersModal');
-    const usersList = document.getElementById('usersList');
-
-    usersBtn.onclick = async () => {
-      // Show/hide the create-user form depending on admin status
-      const createSection = usersModal.querySelector('details');
-      if (createSection) createSection.style.display = isAdmin ? '' : 'none';
-      usersModal.style.display = 'flex';
-      await loadUsers();
-    };
-
-    document.getElementById('closeUsersBtn').onclick = () => {
-      usersModal.style.display = 'none';
-    };
-
-    usersModal.addEventListener('click', (e) => {
-      if (e.target === usersModal) usersModal.style.display = 'none';
-    });
-
-    async function loadUsers() {
-      try {
-        const r = await fetch(BASE_PATH + '/auth/users');
-        const data = await r.json();
-        renderUsers(data.users || []);
-      } catch {
-        usersList.innerHTML = '<p class="muted">Fehler beim Laden.</p>';
-      }
-    }
-
-    function renderUsers(users) {
-      if (users.length === 0) {
-        usersList.innerHTML = '<p class="muted">Keine Benutzer gefunden.</p>';
-        return;
-      }
-      usersList.innerHTML = '';
-      for (const u of users) {
-        const item = document.createElement('div');
-        item.className = 'memory-item';
-        item.style.cssText = 'display:flex;align-items:center;gap:8px;';
-        const dateStr = u.created ? new Date(u.created).toLocaleDateString('de-DE') : '–';
-        item.innerHTML = `
-          <div style="flex:1;">
-            <span style="font-weight:600;">${escapeHtml(u.displayName || u.username)}</span>
-            <span class="muted" style="font-size:0.8rem;"> @${escapeHtml(u.username)} · seit ${dateStr}</span>
-          </div>
-          ${isAdmin ? `<button class="small-btn danger user-del-btn" data-id="${u.id}" data-name="${escapeHtml(u.username)}" title="Löschen">🗑</button>` : ''}
-        `;
-        usersList.appendChild(item);
-      }
-      if (isAdmin) {
-        usersList.querySelectorAll('.user-del-btn').forEach(btn => {
-          btn.addEventListener('click', async () => {
-            if (!confirm(`Benutzer "${btn.dataset.name}" wirklich löschen?`)) return;
-            const r = await fetch(BASE_PATH + '/auth/users/' + btn.dataset.id, { method: 'DELETE' });
-            const data = await r.json();
-            if (!r.ok) { alert(data.error || 'Fehler'); return; }
-            await loadUsers();
-          });
-        });
-      }
-    }
-
-    document.getElementById('addUserBtn').addEventListener('click', async () => {
-      const username = document.getElementById('newUsername').value.trim();
-      const displayName = document.getElementById('newDisplayName').value.trim();
-      const password = document.getElementById('newPassword').value;
-      if (!username || !password) { alert('Benutzername und Passwort sind erforderlich.'); return; }
-      if (password.length < 6) { alert('Passwort muss mindestens 6 Zeichen lang sein.'); return; }
-      const r = await fetch(BASE_PATH + '/auth/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password, displayName: displayName || username }),
-      });
-      const data = await r.json();
-      if (!r.ok) { alert(data.error || 'Fehler'); return; }
-      document.getElementById('newUsername').value = '';
-      document.getElementById('newDisplayName').value = '';
-      document.getElementById('newPassword').value = '';
-      await loadUsers();
-    });
-
     // ── Logout ──
     document.getElementById('topbarLogoutBtn').addEventListener('click', async (e) => {
       e.preventDefault();
       await fetch(BASE_PATH + '/auth/logout', { method: 'POST' });
       window.location.href = '/login';
-    });
-
-    document.getElementById('logoutBtn').addEventListener('click', async () => {
-      if (!confirm('Wirklich abmelden?')) return;
-      await fetch(BASE_PATH + '/auth/logout', { method: 'POST' });
-      window.location.href = BASE_PATH + '/login';
     });
   </script>
 </body>

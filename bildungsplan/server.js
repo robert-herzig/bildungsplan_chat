@@ -17,8 +17,8 @@ app.use(express.json({ limit: "25mb" }));
 
 // ── Config ──────────────────────────────────────────────────────────
 const API_BASE = process.env.MISTRAL_API_BASE || "https://api.mistral.ai/v1";
-const API_KEY = process.env.MISTRAL_API_KEY;
-const MODEL = process.env.MISTRAL_MODEL || "mistral-medium-latest";
+let _apiKey = process.env.MISTRAL_API_KEY || "";
+let _model = process.env.MISTRAL_MODEL || "mistral-medium-latest";
 const CHROMA_DB_PATH = process.env.CHROMA_DB_PATH || "./chroma_db";
 const COLLECTION_NAME = "bildungsplan";
 const TOP_K = parseInt(process.env.TOP_K || "8", 10);
@@ -26,7 +26,14 @@ const MIN_RELEVANCE_SCORE = parseFloat(process.env.MIN_RELEVANCE_SCORE || "0.68"
 const PORT = parseInt(process.env.PORT || "5001", 10);
 const HOST = process.env.HOST || "127.0.0.1";
 const TIMEOUT = parseInt(process.env.MODEL_TIMEOUT || "120", 10) * 1000;
-const CONV_MODEL = process.env.CONV_MODEL || "mistral-medium-latest";
+let _convModel = process.env.CONV_MODEL || "mistral-medium-latest";
+const ADMIN_CONFIG_PATH = path.join(__dirname, "admin_config.json");
+try {
+  const _cfg = JSON.parse(require("fs").readFileSync(ADMIN_CONFIG_PATH, "utf-8"));
+  if (_cfg.apiKey) _apiKey = _cfg.apiKey;
+  if (_cfg.model) _model = _cfg.model;
+  if (_cfg.convModel) _convModel = _cfg.convModel;
+} catch {}
 const PRESETS_PATH = path.join(__dirname, "conversation_presets.json");
 const CUSTOM_PRESETS_PATH = path.join(__dirname, "conversation_presets_custom.json");
 const TMP_DIR = "/tmp";
@@ -110,10 +117,9 @@ app.post("/auth/change-password", async (req, res) => {
 
 // Auth middleware – protect all routes below this point
 function requireAuth(req, res, next) {
-  // Allow static files and auth routes through
+  // Allow static files through
   if (req.path.startsWith("/static")) return next();
-  if (req.session && req.session.user) return next();
-  // Trust gateway auth header (only from localhost proxy)
+  // Always trust gateway auth header when present (gateway has already verified the session)
   const gwHeader = req.headers["x-gateway-user"];
   if (gwHeader) {
     try {
@@ -121,7 +127,9 @@ function requireAuth(req, res, next) {
       return next();
     } catch {}
   }
-  // For API requests return 401; for page requests redirect to login
+  // Fall back to bildungsplan-local session (e.g. direct access)
+  if (req.session && req.session.user) return next();
+  // Unauthenticated
   if (req.headers.accept && req.headers.accept.includes("text/html")) {
     return res.redirect("./login");
   }
@@ -134,9 +142,14 @@ app.use("/static", express.static(path.join(__dirname, "static")));
 
 app.get("/", async (req, res) => {
   try {
-    const html = await fs.readFile(
+    let html = await fs.readFile(
       path.join(__dirname, "templates", "index.html"),
       "utf-8"
+    );
+    const user = req.session.user || {};
+    html = html.replace(
+      '/* __SERVER_USER__ */',
+      `window.__SERVER_USER__ = ${JSON.stringify({ id: user.id || '', username: user.username || '', displayName: user.displayName || '' })};`
     );
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.send(html);
@@ -286,7 +299,7 @@ async function reformulateSearchQuery(userMessage) {
   try {
     const resp = await fetch(API_BASE + "/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + API_KEY },
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + _apiKey },
       body: JSON.stringify({
         model: "mistral-small-latest",
         messages: [
@@ -495,6 +508,31 @@ app.delete("/auth/users/:id", async (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Admin config endpoints ─────────────────────────────────────────
+app.get("/admin/config", async (req, res) => {
+  if (req.session.user.username !== "admin") return res.status(403).json({ error: "Nur Admin." });
+  let storedCfg = {};
+  try { storedCfg = JSON.parse(await fs.readFile(ADMIN_CONFIG_PATH, "utf-8")); } catch {}
+  res.json({
+    model: _model,
+    convModel: _convModel,
+    apiKeySet: !!_apiKey,
+    apiKeyHint: _apiKey ? "••••••••" + _apiKey.slice(-4) : "(nicht gesetzt)",
+  });
+});
+
+app.post("/admin/config", async (req, res) => {
+  if (req.session.user.username !== "admin") return res.status(403).json({ error: "Nur Admin." });
+  const { model, convModel, apiKey } = req.body;
+  let cfg = {};
+  try { cfg = JSON.parse(await fs.readFile(ADMIN_CONFIG_PATH, "utf-8")); } catch {}
+  if (model) { cfg.model = model; _model = model; }
+  if (convModel) { cfg.convModel = convModel; _convModel = convModel; }
+  if (apiKey !== undefined && apiKey !== "") { cfg.apiKey = apiKey; _apiKey = apiKey; }
+  await fs.writeFile(ADMIN_CONFIG_PATH, JSON.stringify(cfg, null, 2), "utf-8");
+  res.json({ ok: true, model: _model, convModel: _convModel, apiKeyHint: _apiKey ? "••••••••" + _apiKey.slice(-4) : "(nicht gesetzt)" });
+});
+
 // ── Conversation history endpoints (per-user) ──────────────────────
 app.get("/conversations", async (req, res) => {
   const userId = req.session.user.id;
@@ -571,9 +609,9 @@ ${convText}`;
   try {
     const resp = await fetch(API_BASE + "/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + API_KEY },
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + _apiKey },
       body: JSON.stringify({
-        model: MODEL,
+        model: _model,
         messages: [{ role: "user", content: prompt }],
         temperature: 0.2,
         max_tokens: 600,
@@ -617,8 +655,8 @@ app.post("/chat", async (req, res) => {
     const timer = setTimeout(() => controller.abort(), TIMEOUT);
     const resp = await fetch(API_BASE + "/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + API_KEY },
-      body: JSON.stringify({ model: MODEL, messages }),
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + _apiKey },
+      body: JSON.stringify({ model: _model, messages }),
       signal: controller.signal,
     });
     clearTimeout(timer);
@@ -686,9 +724,9 @@ app.get("/chat_stream", async (req, res) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: "Bearer " + API_KEY,
+        Authorization: "Bearer " + _apiKey,
       },
-      body: JSON.stringify({ model: MODEL, messages, stream: true }),
+      body: JSON.stringify({ model: _model, messages, stream: true }),
       signal: controller.signal,
     });
     clearTimeout(timer);
@@ -942,9 +980,9 @@ app.post("/conversation/chat", async (req, res) => {
     const timer = setTimeout(() => controller.abort(), TIMEOUT);
     const resp = await fetch(API_BASE + "/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + API_KEY },
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + _apiKey },
       body: JSON.stringify({
-        model: CONV_MODEL,
+        model: _convModel,
         messages,
         temperature: 0.8,
         max_tokens: 300,
@@ -990,8 +1028,8 @@ app.post("/conversation/chat_stream", async (req, res) => {
 
     const resp = await fetch(API_BASE + "/chat/completions", {
       method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: "Bearer " + API_KEY },
-      body: JSON.stringify({ model: CONV_MODEL, messages, temperature: 0.8, max_tokens: 300, stream: true }),
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + _apiKey },
+      body: JSON.stringify({ model: _convModel, messages, temperature: 0.8, max_tokens: 300, stream: true }),
       signal: controller.signal,
     });
 
@@ -1054,6 +1092,6 @@ app.post("/conversation/chat_stream", async (req, res) => {
 // ── Start ───────────────────────────────────────────────────────────
 app.listen(PORT, HOST, () => {
   console.log(`🎓 Bildungsplan-Assistent läuft auf http://${HOST}:${PORT}`);
-  console.log(`   Chat-Modell: ${MODEL}`);
-  console.log(`   Konversations-Modell: ${CONV_MODEL}`);
+  console.log(`   Chat-Modell: ${_model}`);
+  console.log(`   Konversations-Modell: ${_convModel}`);
 });

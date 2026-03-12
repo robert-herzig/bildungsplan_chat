@@ -21,7 +21,10 @@
   <aside class="sim-sidebar collapsed" id="simSidebar">
     <div class="sim-sidebar-header">
       <span>Gespräche</span>
-      <button class="sim-sidebar-new" id="simNewBtn" title="Neues Gespräch">+ Neu</button>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <button class="sim-sidebar-new" id="simNewBtn" title="Neues Gespräch">+ Neu</button>
+        <button class="sim-sidebar-close" id="simSidebarCloseBtn" title="Schließen">✕</button>
+      </div>
     </div>
     <div id="simSidebarList" class="sim-sidebar-list"></div>
   </aside>
@@ -884,6 +887,7 @@ simHistoryBtn.onclick = () => {
   simSidebar.classList.toggle('collapsed');
   if (!simSidebar.classList.contains('collapsed')) renderSimSidebar();
 };
+document.getElementById('simSidebarCloseBtn').onclick = () => simSidebar.classList.add('collapsed');
 
 simNewBtn.onclick = () => {
   if (conversationHistory.length >= 2) saveSimConversation();
@@ -914,6 +918,10 @@ async function renderSimSidebar() {
   simSidebarList.innerHTML = '<div class="sim-sidebar-empty">Lade …</div>';
   try {
     const r = await fetch(BASE + '/conversations');
+    if (r.status === 401) {
+      simSidebarList.innerHTML = '<div class="sim-sidebar-empty">Sitzung abgelaufen. <a href="/login" style="color:var(--accent)">Neu anmelden →</a></div>';
+      return;
+    }
     const data = await r.json();
     // Only show simulator conversations (prefixed with 🗣️)
     const convos = (data.conversations || []).filter(c => c.title.startsWith('🗣️'));

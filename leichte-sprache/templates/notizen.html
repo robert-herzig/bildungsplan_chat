@@ -17,6 +17,17 @@
       <a href="#" id="topbarLogoutBtn" style="color:#C9A84C;">Abmelden</a>
     </div>
   </nav>
+  <div class="ls-sidebar-backdrop" id="sidebarBackdrop"></div>
+  <aside class="ls-sidebar" id="sidebar">
+    <div class="ls-sidebar-header">
+      <span>Verlauf</span>
+      <button class="ls-sidebar-close" id="sidebarCloseBtn" title="Schließen">✕</button>
+    </div>
+    <div class="ls-sidebar-list" id="sidebarList"></div>
+    <div class="ls-sidebar-footer">
+      <button id="clearHistoryBtn" class="secondary" style="width:100%;">Verlauf leeren</button>
+    </div>
+  </aside>
   <div class="container">
     <header class="hero">
       <div class="hero-top">
@@ -46,14 +57,6 @@
         <div id="cleanupOutput" class="output"></div>
       </section>
 
-      <!-- History panel -->
-      <section id="historySection" class="card" style="display:none;">
-        <div class="output-header">
-          <h2>Verlauf</h2>
-          <button id="clearHistoryBtn" class="secondary">Leeren</button>
-        </div>
-        <div id="historyList"></div>
-      </section>
     </main>
 
     <footer>
@@ -73,8 +76,13 @@
     const cleanupError = document.getElementById('cleanupError');
     const copyBtn = document.getElementById('copyBtn');
     const historyBtn = document.getElementById('historyBtn');
-    const historySection = document.getElementById('historySection');
-    const historyList = document.getElementById('historyList');
+    const sidebar = document.getElementById('sidebar');
+    const sidebarBackdrop = document.getElementById('sidebarBackdrop');
+    const sidebarList = document.getElementById('sidebarList');
+    function openSidebar() { sidebar.classList.add('open'); sidebarBackdrop.classList.add('open'); }
+    function closeSidebar() { sidebar.classList.remove('open'); sidebarBackdrop.classList.remove('open'); }
+    document.getElementById('sidebarCloseBtn').onclick = closeSidebar;
+    sidebarBackdrop.onclick = closeSidebar;
 
     cleanupBtn.onclick = async () => {
       cleanupError.style.display = 'none';
@@ -119,14 +127,7 @@
       setTimeout(() => (copyBtn.textContent = 'Kopieren'), 1500);
     };
 
-    historyBtn.onclick = () => {
-      if (historySection.style.display === 'none') {
-        renderHistory();
-        historySection.style.display = '';
-      } else {
-        historySection.style.display = 'none';
-      }
-    };
+    historyBtn.onclick = () => sidebar.classList.contains('open') ? closeSidebar() : (renderHistory(), openSidebar());
 
     document.getElementById('clearHistoryBtn').onclick = () => {
       localStorage.removeItem(HISTORY_KEY);
@@ -138,29 +139,29 @@
       hist.unshift({ input, output, ts: Date.now() });
       hist.splice(MAX_HIST);
       localStorage.setItem(HISTORY_KEY, JSON.stringify(hist));
-      if (historySection.style.display !== 'none') renderHistory();
+      if (sidebar.classList.contains('open')) renderHistory();
     }
 
     function renderHistory() {
       const hist = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
       if (hist.length === 0) {
-        historyList.innerHTML = '<p style="color:var(--muted);font-size:0.88rem;padding:8px 0;">Noch kein Verlauf.</p>';
+        sidebarList.innerHTML = '<div class="ls-sidebar-empty">Noch kein Verlauf.</div>';
         return;
       }
-      historyList.innerHTML = '';
+      sidebarList.innerHTML = '';
       for (const item of hist) {
         const d = document.createElement('div');
-        d.style.cssText = 'border-top:1px solid var(--border);padding:10px 0;cursor:pointer;';
+        d.className = 'ls-sidebar-item';
         const date = new Date(item.ts).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-        d.innerHTML = `<div style="font-size:0.78rem;color:var(--muted);margin-bottom:4px;">${date}</div>
-          <div style="font-size:0.88rem;color:var(--text);white-space:pre-wrap;">${escHtml(item.input.slice(0, 120))}${item.input.length > 120 ? '…' : ''}</div>`;
+        d.innerHTML = `<div class="ls-sidebar-item-date">${date}</div><div class="ls-sidebar-item-text">${escHtml(item.input.slice(0, 100))}${item.input.length > 100 ? '…' : ''}</div>`;
         d.title = 'Klicken zum Wiederherstellen';
         d.onclick = () => {
           notesInput.value = item.input;
           cleanupOutput.textContent = item.output;
+          closeSidebar();
           window.scrollTo({ top: 0, behavior: 'smooth' });
         };
-        historyList.appendChild(d);
+        sidebarList.appendChild(d);
       }
     }
 
