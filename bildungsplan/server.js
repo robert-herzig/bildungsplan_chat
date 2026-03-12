@@ -68,6 +68,9 @@ async function readUsers() {
 
 // Auth routes (before auth middleware so they're accessible without login)
 app.get("/login", async (req, res) => {
+  // If coming through the gateway (already authenticated), just go to the app
+  const gwHeader = req.headers["x-gateway-user"];
+  if (gwHeader) return res.redirect("./");
   if (req.session && req.session.user) return res.redirect("./");
   try {
     const html = await fs.readFile(path.join(__dirname, "templates", "login.html"), "utf-8");

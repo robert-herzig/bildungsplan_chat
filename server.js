@@ -6,6 +6,7 @@ const express = require("express");
 const path = require("path");
 const fs = require("fs/promises");
 const session = require("express-session");
+const FileStore = require("session-file-store")(session);
 const bcrypt = require("bcryptjs");
 const { createProxyMiddleware } = require("http-proxy-middleware");
 require("dotenv").config();
@@ -25,13 +26,27 @@ app.use("/auth", express.json({ limit: "1mb" }));
 app.use("/auth", express.urlencoded({ extended: false }));
 
 // ── Session ─────────────────────────────────────────────────
+// Trust the nginx reverse proxy so req.secure reflects the real HTTPS connection
+app.set("trust proxy", 1);
+
 app.use(
   session({
     name: "eulenai.sid",
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
-    cookie: { maxAge: 7 * 24 * 60 * 60 * 1000, httpOnly: true },
+    store: new FileStore({
+      path: path.join(__dirname, "sessions"),
+      ttl: 7 * 24 * 60 * 60, // seconds – matches cookie maxAge
+      retries: 1,
+      logFn: () => {},        // suppress verbose file-store logs
+    }),
+    cookie: {
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      httpOnly: true,
+      sameSite: "lax",
+      secure: true,           // sent only over HTTPS (nginx handles TLS)
+    },
   })
 );
 

@@ -222,8 +222,10 @@
               <span>🎙️ Freisprechen</span>
             </label>
           </div>
-          <button id="stopAudioBtn" class="small-btn" style="display:none;" title="Audio stoppen">⏹ Stop</button>
-          <small class="muted">Basierend auf deinen Bildungsplan-Dokumenten</small>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <button id="extractMemoriesBtn" class="small-btn" title="Wichtige Infos aus diesem Gespräch als Erinnerungen speichern" style="font-size:0.78rem;">🧠 Merken</button>
+            <button id="stopAudioBtn" class="small-btn" style="display:none;" title="Audio stoppen">⏹ Stop</button>
+          </div>
         </div>
       </div>
     </main>
@@ -264,6 +266,19 @@
   </div>
 
   <div id="toastBar"></div>
+
+  <!-- Memory Review Modal -->
+  <div id="memoryReviewModal" class="modal" style="display:none;">
+    <div class="modal-content" style="max-width:500px;">
+      <h3>🧠 Neue Erinnerungen speichern?</h3>
+      <p class="muted" style="margin-bottom:12px;">Der Assistent hat aus dem Gespräch folgende Informationen extrahiert. Wähle aus, was du dauerhaft merken möchtest:</p>
+      <div id="memoryReviewList" style="max-height:280px;overflow-y:auto;margin-bottom:14px;"></div>
+      <div class="modal-actions">
+        <button id="memoryReviewSaveBtn" class="primary">Ausgewählte speichern</button>
+        <button id="memoryReviewSkipBtn" class="secondary">Verwerfen</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Admin Modal -->
   <div id="adminModal" class="modal" style="display:none;">
@@ -700,7 +715,7 @@
             renderMermaidCharts(contentDiv);
             chatHistory.push({ role: 'user', content: text });
             chatHistory.push({ role: 'assistant', content: fullText });
-            scrollToBottom();
+            scrollToContent(contentDiv);
             autoSaveConversation();
 
             // Queue remaining un-spoken text for TTS
@@ -741,7 +756,7 @@
           }
 
           contentDiv.innerHTML = formatMarkdown(fullText) + '<span class="cursor">▊</span>';
-          scrollToBottom();
+          scrollToContent(contentDiv);
 
           // Extract new complete sentences for TTS (split on .!?;: followed by space, or double newlines)
           if (useTTS && fullText.length > lastSpokenIdx) {
@@ -1153,6 +1168,15 @@
       chatArea.scrollTop = chatArea.scrollHeight;
     }
 
+    // During streaming: scroll so the bottom of the text contentDiv is visible,
+    // leaving sources below the fold so the user can read the incoming text.
+    function scrollToContent(contentDiv) {
+      const chatRect = chatArea.getBoundingClientRect();
+      const contentRect = contentDiv.getBoundingClientRect();
+      const delta = contentRect.bottom - chatRect.bottom;
+      if (delta > 0) chatArea.scrollTop += delta + 8;
+    }
+
     function escapeHtml(str) {
       const div = document.createElement('div');
       div.textContent = str;
@@ -1239,11 +1263,13 @@
     }
 
     // ── New chat ──
-    clearBtn.onclick = () => {
+    clearBtn.onclick = async () => {
       stopAudio();
       setStatus('');
-      if (chatHistory.length >= 2) {
-        autoSaveConversation();
+      const snapshot = chatHistory.slice();
+      if (snapshot.length >= 2) {
+        await autoSaveConversation();
+        extractAndSaveMemories(snapshot);
       }
       startNewChat();
     };
@@ -1381,7 +1407,14 @@
       if (!sidebar.classList.contains('collapsed')) renderSidebar();
     };
 
-    newChatBtn.onclick = () => startNewChat();
+    newChatBtn.onclick = async () => {
+      const snapshot = chatHistory.slice();
+      if (snapshot.length >= 2) {
+        await autoSaveConversation();
+        extractAndSaveMemories(snapshot);
+      }
+      startNewChat();
+    };
     document.getElementById('sidebarCloseBtn').onclick = () => sidebar.classList.add('collapsed');
 
     function startNewChat() {
@@ -1492,8 +1525,83 @@
       toastTimer = setTimeout(() => toastBar.classList.remove('visible'), durationMs);
     }
 
-    // ── Background memory extraction ──
+    document.getElementById('extractMemoriesBtn').onclick = () => {
+      if (chatHistory.length < 2) {
+        showToast('Noch kein Gespräch zum Analysieren.');
+        return;
+      }
+      extractAndShowMemoryReview(chatHistory.slice());
+    };
+
+    // ── Background memory extraction with review modal ──
+    const memoryReviewModal = document.getElementById('memoryReviewModal');
+    const memoryReviewList = document.getElementById('memoryReviewList');
+    document.getElementById('memoryReviewSaveBtn').onclick = async () => {
+      const checked = [...memoryReviewList.querySelectorAll('input[type=checkbox]:checked')];
+      for (const cb of checked) {
+        const text = cb.closest('.memory-review-item').querySelector('.memory-review-text').value.trim();
+        if (text) {
+          await fetch(BASE_PATH + '/memories', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: text }),
+          }).catch(() => {});
+        }
+      }
+      memoryReviewModal.style.display = 'none';
+      if (checked.length > 0) showToast(`🧠 ${checked.length} Erinnerung${checked.length > 1 ? 'en' : ''} gespeichert`);
+    };
+    document.getElementById('memoryReviewSkipBtn').onclick = () => { memoryReviewModal.style.display = 'none'; };
+    memoryReviewModal.addEventListener('click', e => { if (e.target === memoryReviewModal) memoryReviewModal.style.display = 'none'; });
+
+    async function extractAndShowMemoryReview(messages) {
+      if (!messages || messages.length < 2) return;
+      showToast('🧠 Analysiere Gespräch …', 8000);
+      try {
+        const [summarizeResp, existingResp] = await Promise.all([
+          fetch(BASE_PATH + '/conversations/summarize', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ messages }),
+          }),
+          fetch(BASE_PATH + '/memories'),
+        ]);
+        if (!summarizeResp.ok) {
+          showToast('❌ Analyse fehlgeschlagen (Server-Fehler)');
+          return;
+        }
+        const summarizeData = await summarizeResp.json();
+        const existingData = await existingResp.json();
+        const existing = (existingData.memories || []).map(m => m.content.toLowerCase());
+        const suggested = (summarizeData.memories || []).filter(s => {
+          // Deduplicate: only skip if clearly already stored (40+ char match)
+          const sLow = s.toLowerCase();
+          return !existing.some(e => {
+            const key = e.length > 40 ? e.slice(0, 40) : e;
+            return sLow.includes(key) || e.includes(sLow.slice(0, Math.min(40, sLow.length)));
+          });
+        });
+        if (suggested.length === 0) {
+          showToast('🧠 Keine neuen Erinnerungen gefunden');
+          return;
+        }
+        memoryReviewList.innerHTML = '';
+        for (const text of suggested) {
+          const row = document.createElement('div');
+          row.className = 'memory-review-item';
+          row.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:8px;';
+          row.innerHTML = `<input type="checkbox" checked style="flex-shrink:0;margin-top:2px;width:16px;height:16px;accent-color:var(--accent);cursor:pointer;">
+            <input type="text" class="memory-review-text memory-input" value="${escapeHtml(text)}" style="flex:1;font-size:0.85rem;">`;
+          memoryReviewList.appendChild(row);
+        }
+        memoryReviewModal.style.display = 'flex';
+      } catch (err) {
+        showToast('❌ Analyse fehlgeschlagen: ' + (err.message || 'Unbekannter Fehler'));
+      }
+    }
+
     async function extractAndSaveMemories(messages) {
+      // Silent save used only on page-hide (no UI available)
       if (!messages || messages.length < 2) return;
       try {
         const r = await fetch(BASE_PATH + '/conversations/summarize', {
@@ -1509,9 +1617,6 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ content }),
           });
-        }
-        if (memories.length > 0) {
-          showToast(`🧠 ${memories.length} Erinnerung${memories.length > 1 ? 'en' : ''} gespeichert`);
         }
       } catch { /* silent */ }
     }
@@ -1534,9 +1639,11 @@
     // Also intercept in-page nav links
     document.querySelectorAll('.site-topbar-nav a, .brand').forEach(link => {
       link.addEventListener('click', () => {
-        if (chatHistory.length >= 2) {
+        if (chatHistory.length >= 4) {
           autoSaveConversation();
-          extractAndSaveMemories(chatHistory.slice());
+          extractAndSaveMemories(chatHistory.slice());  // silent on nav-away
+        } else if (chatHistory.length >= 2) {
+          autoSaveConversation();
         }
       });
     });
@@ -1544,7 +1651,8 @@
     // ── Logout ──
     document.getElementById('topbarLogoutBtn').addEventListener('click', async (e) => {
       e.preventDefault();
-      await fetch(BASE_PATH + '/auth/logout', { method: 'POST' });
+      // Always destroy the gateway session (the authoritative one)
+      await fetch('/auth/logout', { method: 'POST' });
       window.location.href = '/login';
     });
   </script>
