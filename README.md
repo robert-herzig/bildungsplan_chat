@@ -1,34 +1,103 @@
-# 🎓 Bildungsplan GENT – KI-Assistent
+# 🦉 EulenAI – KI-Werkzeuge für Lehrkräfte
 
-Ein RAG-basierter (Retrieval-Augmented Generation) KI-Assistent für Lehrkräfte an SBBZ in Baden-Württemberg, Förderschwerpunkt **Geistige Entwicklung (GENT)**. Der Assistent nutzt den Bildungsplan 2022 als Wissensgrundlage und beantwortet Fragen über eine Weboberfläche mithilfe der Mistral-API.
+Eine Sammlung KI-gestützter Werkzeuge für Lehrkräfte an SBBZ in Baden-Württemberg, Förderschwerpunkt **Geistige Entwicklung (GENT)**. Die Plattform bietet einen Bildungsplan-Assistenten, einen Elterngespräch-Simulator, einen Leichte-Sprache-Übersetzer und ein Notizen-Werkzeug – alles hinter einem zentralen Authentifizierungs-Gateway.
 
-**Live:** [https://eulenai.de/bildungsplan/](https://eulenai.de/bildungsplan/)
+**Live:** [https://eulenai.de/](https://eulenai.de/)
+
+---
+
+## Überblick: Werkzeuge
+
+| Werkzeug | URL | Beschreibung |
+|---|---|---|
+| 📚 **Bildungsplan-Assistent** | `/bildungsplan/` | RAG-Chat mit dem Bildungsplan 2022 GENT |
+| 🗣️ **Elterngespräch-Simulator** | `/bildungsplan/conversation` | Rollenspiel-Training für Elterngespräche |
+| 🌿 **Leichte & Einfache Sprache** | `/leichte-sprache/` | Texte in Leichte/Einfache Sprache übersetzen |
+| ✏️ **Notizen ausformulieren** | `/leichte-sprache/notizen` | Stichpunkte zu professionellen Texten |
 
 ---
 
 ## Architektur
 
 ```
-Bildungsplan_PDFs/          ← PDF-Dokumente (nicht im Git)
-       │
-       ▼
-  ingest.py                 ← Extraktion, Chunking, Mistral-Embeddings
-       │
-       ▼
-  chroma_db/                ← Lokale Vektordatenbank (nicht im Git)
-       │
-       ▼
-  query_helper.py           ← Python-Brücke: ChromaDB-Suche für Node
-       │
-       ▼
-  server.js                 ← Express-Server (Port 5001)
-       │
-       ▼
-  nginx /bildungsplan/      ← Reverse Proxy auf eulenai.de
-       │
-       ▼
-  templates/index.html      ← Deutsche Chat-Oberfläche
+Browser / nginx (HTTPS :443)
+        │
+        ▼
+  server.js – Gateway (Port 3000)
+  ├── Zentrales Login / Session-Management
+  ├── Proxy → bildungsplan (Port 5001)
+  └── Proxy → leichte-sprache (Port 5000)
+        │                     │
+        ▼                     ▼
+  bildungsplan/           leichte-sprache/
+  server.js               server.js
+  ├── RAG-Chat            ├── Paraphrase (Leichte/Einfache Sprache)
+  ├── Elterngespräch      └── Notizen ausformulieren
+  ├── TTS / STT
+  ├── Speicher (Memories)
+  └── Admin-Panel
+        │
+        ▼
+  query_helper.py  ←  chroma_db/  ←  ingest.py  ←  Bildungsplan_PDFs/
 ```
+
+**PM2-Prozesse** (verwaltet via `ecosystem.config.js`):
+- `gateway` – Root-Gateway, Auth, Proxy
+- `bildungsplan` – Bildungsplan & Elterngespräch
+- `leichte-sprache` – Leichte Sprache & Notizen
+
+---
+
+## Features im Detail
+
+### 📚 Bildungsplan-Assistent (`/bildungsplan/`)
+
+- **Hybrid-RAG**: Kombination aus ChromaDB-Dokumentensuche (Mistral Embeddings) und DuckDuckGo-Websuche. Kurze oder konversationelle Nachrichten überspringen das RAG automatisch.
+- **Query-Reformulierung**: Eine schnelle LLM-Vorablaufschicht reformuliert die Nutzerfrage in eine optimale Suchanfrage bevor ChromaDB abgefragt wird.
+- **Streaming-Antworten**: Token-für-Token-Ausgabe via Server-Sent Events; Quellen erscheinen erst nach der Antwort.
+- **Quellenangaben**: Nummerierte Belege aus den PDF-Dokumenten sowie Weblinks werden nach jeder Antwort aufgelistet.
+- **Mermaid-Diagramme**: Antworten können Flowcharts als interaktive Mermaid-Grafiken enthalten; diese lassen sich als PNG exportieren.
+- **Sprachein- / -ausgabe (STT / TTS)**:
+  - 🎙️-Taste oder Leertaste aktiviert die Aufnahme (Whisper via Mistral STT-API)
+  - Antworten werden bei Sprachsteuerung automatisch vorgelesen (TTS via `tts_helper.py`)
+  - Laufende Wiedergabe kann durch erneutes Drücken der Mikrofontaste unterbrochen werden
+- **Gesprächsgedächtnis (Memories)**:
+  - 🧠 **Merken**-Taste: zeigt eine Review-Maske mit Checkboxen, in der extrahierte Fakten vor dem Speichern bearbeitet werden können
+  - Automatische stille Extraktion beim Beenden / Verlassen des Chats (kein Modal)
+  - Memories werden in jedem neuen Chat im System-Prompt berücksichtigt
+  - Verwaltung gespeicherter Erinnerungen über das Speicher-Panel (editierbar & löschbar)
+- **Gesprächshistorie**: Alle Chats werden pro Nutzer persistent gespeichert und können über die linke Seitenleiste geladen werden (max. 50 Gespräche).
+- **System-Prompt**: Über ⚙ jederzeit anpassbar, pro Nutzer gespeichert.
+- **Mobil-optimiert**: Vollresponsive Oberfläche, Overflow-Schutz, dynamische Viewport-Höhe.
+
+### 🗣️ Elterngespräch-Simulator (`/bildungsplan/conversation`)
+
+- Rollenspiel: Die KI übernimmt die Rolle eines Elternteils (verschiedene Persönlichkeiten mit Szenariobeschreibung), die Lehrkraft übt die Gesprächsführung.
+- **Sprachsteuerung**: Aufnahme per 🎙️-Taste / Leertaste, automatischer Stopp bei Sprechpause.
+- **TTS-Antworten**: Das simulierte Elternteil antwortet akustisch; Wiedergabe kann unterbrochen werden.
+- **Vorgaben (Presets)**: Mitgelieferte und eigene Persona-/Szenariodefinitionen; eigene Presets erstellbar.
+- **Gesprächshistorie**: Per-Nutzer-Speicherung mit Seitenleiste zum Laden früherer Übungsgespräche.
+- **Eigenes Modell konfigurierbar**: Admin kann das Konversationsmodell separat vom RAG-Modell einstellen.
+
+### 🌿 Leichte & Einfache Sprache (`/leichte-sprache/`)
+
+- Zwei Tabs: **Leichte Sprache** (vereinfacht nach den Regeln für Leichte Sprache) und **Einfache Sprache** (klar und verständlich, aber weniger strikt).
+- Streaming-Ausgabe mit Fortschrittsanzeige.
+- **Verlaufsleiste**: Overlay-Seitenleiste (linke Seite) mit Verlauf der übersetzen Texte; ✕-Schaltfläche zum Schließen.
+- System-Prompt über ⚙ anpassbar.
+
+### ✏️ Notizen ausformulieren (`/leichte-sprache/notizen`)
+
+- Verwandelt Stichpunkte und rohe Notizen in fehlerfreie, professionelle Texte (z. B. für Berichte, E-Mails, Protokolle).
+- Verlaufsleiste analog zu Leichte Sprache.
+
+### 🔒 Authentifizierung & Nutzerverwaltung
+
+- Zentrales Login über das Gateway (`/login`); Session-Cookie (`eulenai.sid`) mit `HttpOnly`, `Secure`, `SameSite=Lax`.
+- **Persistente Sessions**: Session-Dateien (`sessions/`) überleben Server-Neustarts; stabile `SESSION_SECRET` in `.env`.
+- Per-Nutzer-Daten: Memories, Gesprächshistorie, System-Prompt (`memories.json`, `conversations.json`).
+- **Admin-Panel** (nur für `admin`-Account): Nutzerverwaltung (erstellen / löschen), Modellauswahl (Chat-Modell & Konversationsmodell separat), API-Schlüssel ändern – alles über ein Modal im Browser.
+- Passwort-Änderung für alle Nutzer über `/auth/change-password`.
 
 ---
 
@@ -54,22 +123,25 @@ cd bildungsplan_chat
 cp .env.example .env
 ```
 
-Dann `.env` öffnen und den API Key eintragen:
+Dann `.env` öffnen und anpassen:
 
 ```env
 MISTRAL_API_KEY=dein_api_key_hier
-MISTRAL_MODEL=mistral-small-latest
+MISTRAL_MODEL=mistral-medium-latest
 PDF_FOLDER=./Bildungsplan_PDFs
 CHROMA_DB_PATH=./chroma_db
 TOP_K=8
 PORT=5001
 HOST=127.0.0.1
+SESSION_SECRET=ein-langes-zufaelliges-geheimnis
 ```
+
+> **Wichtig:** `SESSION_SECRET` muss stabil sein (nicht `Date.now()` o. ä.), damit Sessions Server-Neustarts überleben.
 
 ### 4. Abhängigkeiten installieren
 
 ```bash
-# Node.js
+# Node.js (im Projekt-Root – installiert Gateway + alle Sub-Apps)
 npm install
 
 # Python
@@ -78,19 +150,32 @@ pip3 install --user pymupdf chromadb python-dotenv
 
 ### 5. PDFs einfügen und indexieren
 
-Bildungsplan-PDFs in den Ordner `Bildungsplan_PDFs/` legen und dann:
+Bildungsplan-PDFs in `bildungsplan/Bildungsplan_PDFs/` legen und dann:
 
 ```bash
+cd bildungsplan
 python3 ingest.py
 ```
 
-Die Ingestion läuft automatisch durch alle PDFs, erzeugt Embeddings über die Mistral-API und speichert alles lokal in ChromaDB. Bei 22 PDFs (~2.300 Chunks) dauert das ca. 5–10 Minuten – der eingebaute Retry-Mechanismus behandelt Rate-Limits des Free-Tiers automatisch.
+Die Ingestion erzeugt Embeddings über die Mistral-API und speichert alles in ChromaDB. Bei ~22 PDFs dauert das ca. 5–10 Minuten; ein eingebauter Retry-Mechanismus behandelt Rate-Limits automatisch.
+
+> `ingest.py` löscht und erstellt die ChromaDB-Collection bei jedem Lauf komplett neu.
 
 ### 6. Server starten (Entwicklung)
 
 ```bash
+# Gateway (startet auf Port 3000)
 node server.js
-# → http://127.0.0.1:5001
+
+# In weiteren Terminals:
+cd bildungsplan && node server.js   # Port 5001
+cd leichte-sprache && node server.js # Port 5000
+```
+
+Oder alle auf einmal via PM2:
+
+```bash
+pm2 start ecosystem.config.js
 ```
 
 ---
@@ -103,31 +188,27 @@ node server.js
 bash deploy.sh
 ```
 
-Das Skript:
-- Kopiert alle Dateien nach `/var/www/bildungsplan/`
-- Führt `npm install --production` aus
-- Startet/restartet den PM2-Prozess `bildungsplan_assistent`
+Das Skript kopiert alle Dateien nach `/var/www/eulenai/`, führt `npm install --production` aus und startet alle drei PM2-Prozesse neu.
 
 ### nginx-Konfiguration
 
-Den Block aus `nginx_bildungsplan.conf` in den `server { listen 443 ssl; }`-Block der eulenai-Konfiguration einfügen (`/etc/nginx/sites-available/eulenai`):
+Die aktive Konfiguration liegt unter `/etc/nginx/sites-enabled/eulenai`. Alles wird über den Gateway-Port 3000 geleitet:
 
 ```nginx
-location /bildungsplan/ {
-    proxy_pass http://127.0.0.1:5001/;
+location / {
+    proxy_pass http://127.0.0.1:3000;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
     proxy_buffering off;
     proxy_read_timeout 600s;
     proxy_send_timeout 600s;
-    rewrite ^/bildungsplan$ /bildungsplan/ permanent;
 }
 ```
-
-Dann:
 
 ```bash
 sudo nginx -t && sudo systemctl reload nginx
@@ -137,42 +218,36 @@ sudo nginx -t && sudo systemctl reload nginx
 
 ```bash
 pm2 list
-pm2 logs bildungsplan_assistent
+pm2 logs gateway
+pm2 logs bildungsplan
+pm2 logs leichte-sprache
 ```
 
 ---
 
 ## Neue PDFs hinzufügen / Re-Indexieren
 
-Wenn du neue Dokumente hinzufügst oder bestehende aktualisierst:
-
 ```bash
-# 1. PDFs in den Ordner legen
-cp neue_datei.pdf Bildungsplan_PDFs/
+# 1. PDF in den Ordner legen
+cp neue_datei.pdf bildungsplan/Bildungsplan_PDFs/
 
-# 2. Neu indexieren (löscht und erstellt die DB komplett neu)
-cd /home/herzi/mistral_schoolstuff
+# 2. Neu indexieren
+cd /home/herzi/mistral_schoolstuff/bildungsplan
 python3 ingest.py
 
-# 3. Auf den Server deployen (kopiert auch die neue chroma_db)
+# 3. Auf den Server deployen
 bash deploy.sh
 ```
-
-> **Hinweis:** `ingest.py` löscht bei jedem Lauf die bestehende ChromaDB-Collection und baut sie komplett neu auf. Dadurch werden auch entfernte PDFs sauber aus dem Index gelöscht.
 
 ---
 
 ## System-Prompt anpassen
 
-Der System-Prompt steuert das Verhalten des Assistenten. Er kann auf zwei Wegen angepasst werden:
-
-**Über die Web-Oberfläche:** Auf das ⚙-Symbol oben rechts klicken.
-
-**Direkt in der Datei:**
+Jeder Nutzer hat seinen eigenen System-Prompt, der über das ⚙-Symbol in der Oberfläche bearbeitet werden kann. Alternativ direkt auf dem Server:
 
 ```bash
-nano /var/www/bildungsplan/system_prompt.txt
-pm2 restart bildungsplan_assistent
+nano /var/www/eulenai/bildungsplan/system_prompt.txt
+pm2 restart bildungsplan
 ```
 
 ---
@@ -180,37 +255,51 @@ pm2 restart bildungsplan_assistent
 ## Projektstruktur
 
 ```
-bildungsplan_chat/
-├── Bildungsplan_PDFs/      ← PDFs hier ablegen (nicht im Git)
-├── chroma_db/              ← Vektordatenbank, wird von ingest.py erzeugt (nicht im Git)
-├── templates/
-│   └── index.html          ← Chat-Oberfläche (deutsch)
-├── static/
-│   └── style.css           ← Styles (dunkles Theme, passend zu eulenai.de)
-├── server.js               ← Express-Backend, Streaming-Chat, RAG-Integration
-├── query_helper.py         ← ChromaDB-Suche (wird von server.js aufgerufen)
-├── ingest.py               ← PDF → Chunks → Embeddings → ChromaDB
-├── system_prompt.txt       ← Anweisungen für den Assistenten
-├── ecosystem.config.js     ← PM2-Konfiguration
-├── deploy.sh               ← Deployment-Skript
-├── nginx_bildungsplan.conf ← nginx-Konfigurationsvorlage
+mistral_schoolstuff/
+├── server.js                   ← Gateway: Auth, Session, Proxy (Port 3000)
+├── sessions/                   ← Persistente Session-Dateien (nicht im Git)
+├── ecosystem.config.js         ← PM2-Konfiguration (gateway, bildungsplan, leichte-sprache)
+├── deploy.sh                   ← Deployment-Skript
 ├── package.json
-├── requirements.txt        ← Python-Abhängigkeiten
-└── .env.example            ← Vorlage für Umgebungsvariablen
+├── .env                        ← Geheime Konfiguration (nicht im Git)
+│
+├── landing/
+│   ├── index.html              ← Startseite (nach Login)
+│   └── login.html              ← Login-Seite
+│
+├── shared/
+│   └── static/img/             ← Gemeinsam genutzte Assets (Logo etc.)
+│
+├── bildungsplan/
+│   ├── server.js               ← Express-Backend (Port 5001): Chat, RAG, Auth, Admin
+│   ├── ingest.py               ← PDF → Chunks → Embeddings → ChromaDB
+│   ├── query_helper.py         ← ChromaDB-Suche (wird von server.js aufgerufen)
+│   ├── web_search.py           ← DuckDuckGo-Websuche (Python-Helfer)
+│   ├── stt_helper.py           ← Sprache-zu-Text via Mistral API
+│   ├── tts_helper.py           ← Text-zu-Sprache
+│   ├── tts_server.py           ← TTS-Server-Helfer
+│   ├── system_prompt.txt       ← Standard-System-Prompt
+│   ├── users.json              ← Nutzerdaten (nicht im Git)
+│   ├── conversations.json      ← Gesprächshistorie aller Nutzer (nicht im Git)
+│   ├── memories.json           ← Gespeicherte Erinnerungen aller Nutzer (nicht im Git)
+│   ├── conversation_presets.json       ← Eingebaute Elterngespräch-Personas
+│   ├── Bildungsplan_PDFs/      ← PDFs hier ablegen (nicht im Git)
+│   ├── chroma_db/              ← Vektordatenbank (nicht im Git)
+│   ├── templates/
+│   │   ├── index.html          ← Bildungsplan-Chat-Oberfläche
+│   │   ├── conversation.html   ← Elterngespräch-Simulator
+│   │   └── login.html          ← (Sub-App-Login, nicht aktiv genutzt)
+│   └── static/
+│       ├── style.css           ← Bildungsplan-Styles
+│       └── conversation.css    ← Elterngespräch-Styles
+│
+├── leichte-sprache/
+│   ├── server.js               ← Express-Backend (Port 5000): Paraphrase, Notizen
+│   ├── templates/
+│   │   ├── index.html          ← Leichte & Einfache Sprache
+│   │   └── notizen.html        ← Notizen ausformulieren
+│   └── static/
+│       └── style.css           ← Leichte-Sprache-Styles
+│
+└── requirements.txt            ← Python-Abhängigkeiten
 ```
-
----
-
-## Modell & Kosten
-
-Der Assistent verwendet standardmäßig `mistral-small-latest` – das ist das kostengünstigste Mistral-Modell und für diesen Anwendungsfall völlig ausreichend. Das Modell kann in `.env` geändert werden:
-
-```env
-# Kostenlos / günstig:
-MISTRAL_MODEL=mistral-small-latest
-
-# Leistungsfähiger (kostenpflichtig):
-MISTRAL_MODEL=mistral-large-latest
-```
-
-Die Embeddings (`mistral-embed`) werden **nur bei der Ingestion** und pro Nutzeranfrage (für die Suche) verwendet, nicht für den Chat selbst.
