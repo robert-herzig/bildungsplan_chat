@@ -22,3 +22,8 @@ sessions/
 
 # Bildungsplan PDFs – nicht im Repository
 Bildungsplan_PDFs/
+
+.agents
+.claude
+skills-lock.json
+Unterrichtsplaene/*

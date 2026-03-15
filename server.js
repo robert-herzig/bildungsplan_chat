@@ -1,6 +1,6 @@
 /* EulenAI – Root Gateway Server
    Serves the landing page, handles central auth, and proxies
-   requests to the sub-app servers (bildungsplan:5001, leichte-sprache:5000). */
+   requests to the sub-app servers (bildungsplan:5001, leichte-sprache:5000, unterrichtsplanung:5002). */
 
 const express = require("express");
 const path = require("path");
@@ -135,6 +135,22 @@ app.use(
   createProxyMiddleware({
     target: "http://127.0.0.1:5000",
     pathRewrite: { "^/leichte-sprache": "" },
+    ...proxyOptions,
+    on: {
+      proxyReq: (proxyReq, req) => {
+        if (req.session && req.session.user) {
+          proxyReq.setHeader("X-Gateway-User", JSON.stringify(req.session.user));
+        }
+      },
+    },
+  })
+);
+
+app.use(
+  "/unterrichtsplanung",
+  createProxyMiddleware({
+    target: "http://127.0.0.1:5002",
+    pathRewrite: { "^/unterrichtsplanung": "" },
     ...proxyOptions,
     on: {
       proxyReq: (proxyReq, req) => {

@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/leichte-sprache/static/style.css">
 </head>
 <body>
+  <a href="#main-content" class="skip-link">Zum Hauptinhalt springen</a>
   <nav class="site-topbar">
     <a href="/" class="brand"><img src="/shared/static/img/euletranspa.png" alt=""><span>Eulen<span class="gold">AI</span></span></a>
     <div class="site-topbar-nav">
@@ -14,14 +15,16 @@
       <a href="/bildungsplan/conversation">Elterngespräch</a>
       <a href="/leichte-sprache/">Leichte Sprache</a>
       <a href="/leichte-sprache/notizen">Notizen</a>
-      <a href="#" id="topbarLogoutBtn" style="color:#C9A84C;">Abmelden</a>
+      <a href="/unterrichtsplanung/">Unterrichtsplanung</a>
+      <button id="adminNavBtn" style="display:none;">Verwaltung</button>
+      <button id="topbarLogoutBtn" style="color:#C9A84C;">Abmelden</button>
     </div>
   </nav>
   <div class="ls-sidebar-backdrop" id="sidebarBackdrop"></div>
   <aside class="ls-sidebar" id="sidebar">
     <div class="ls-sidebar-header">
       <span>Verlauf</span>
-      <button class="ls-sidebar-close" id="sidebarCloseBtn" title="Schließen">✕</button>
+      <button class="ls-sidebar-close" id="sidebarCloseBtn" title="Schließen" aria-label="Schließen">✕</button>
     </div>
     <div class="ls-sidebar-list" id="sidebarList"></div>
     <div class="ls-sidebar-footer">
@@ -32,12 +35,12 @@
     <header class="hero">
       <div class="hero-top">
         <h1>✏️ Notizen ausformulieren</h1>
-        <button id="historyBtn" class="icon-btn" title="Verlauf anzeigen">📋</button>
+        <button id="historyBtn" class="icon-btn" title="Verlauf anzeigen" aria-label="Verlauf anzeigen">📋</button>
       </div>
       <p class="subtitle">Verwandle Stichpunkte und chaotische Notizen in fehlerfreie, professionelle Texte</p>
     </header>
 
-    <main>
+    <main id="main-content">
       <section class="card">
         <label for="notesInput">Deine Notizen / Stichpunkte</label>
         <textarea id="notesInput" rows="10" placeholder="Schreibe hier deine Stichworte, Ideen oder chaotischen Sätze …"></textarea>
@@ -174,6 +177,21 @@
       await fetch('/auth/logout', { method: 'POST' });
       window.location.href = '/login';
     });
+
+    // ── Admin nav button ──────────────────────────────────────
+    (async () => {
+      try {
+        const r = await fetch('/bildungsplan/auth/me');
+        if (r.ok) {
+          const data = await r.json();
+          if (data.user && data.user.username === 'admin') {
+            const btn = document.getElementById('adminNavBtn');
+            btn.style.display = '';
+            btn.addEventListener('click', () => { window.location.href = '/bildungsplan/'; });
+          }
+        }
+      } catch {}
+    })();
   </script>
 </body>
 </html>

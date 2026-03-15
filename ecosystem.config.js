@@ -24,5 +24,13 @@ module.exports = {
         NODE_ENV: "production",
       },
     },
+    {
+      name: "unterrichtsplanung",
+      script: "server.js",
+      cwd: "/var/www/eulenai/unterrichtsplanung",
+      env: {
+        NODE_ENV: "production",
+      },
+    },
   ],
 };

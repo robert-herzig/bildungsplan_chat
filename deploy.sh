@@ -13,7 +13,7 @@ echo "========================"
 # 1. Create deployment directory
 echo ""
 echo "📁 Erstelle Deployment-Verzeichnis..."
-sudo mkdir -p "$DEPLOY_DIR"/{bildungsplan,leichte-sprache,landing,shared/static/img}
+sudo mkdir -p "$DEPLOY_DIR"/{bildungsplan,leichte-sprache,unterrichtsplanung,landing,shared/static/img}
 sudo chown -R "$USER:$USER" "$DEPLOY_DIR"
 
 # ── Gateway server ─────────────────────────────────────────
@@ -94,7 +94,20 @@ cp -r "$SOURCE_DIR/leichte-sprache/static" "$DEPLOY_DIR/leichte-sprache/"
 echo "📦 Installiere Leichte-Sprache npm-Pakete..."
 cd "$DEPLOY_DIR/leichte-sprache"
 npm install --production
+# ── Unterrichtsplanung ─────────────────────────────────────────
+echo ""
+echo "📋 Kopiere Unterrichtsplanung-Dateien..."
+cp "$SOURCE_DIR/unterrichtsplanung/server.js" "$DEPLOY_DIR/unterrichtsplanung/"
+cp "$SOURCE_DIR/unterrichtsplanung/package.json" "$DEPLOY_DIR/unterrichtsplanung/"
+cp "$SOURCE_DIR/unterrichtsplanung/system_prompt.txt" "$DEPLOY_DIR/unterrichtsplanung/"
+cp "$SOURCE_DIR/unterrichtsplanung/web_search.py" "$DEPLOY_DIR/unterrichtsplanung/"
+mkdir -p "$DEPLOY_DIR/unterrichtsplanung/templates" "$DEPLOY_DIR/unterrichtsplanung/static"
+cp -r "$SOURCE_DIR/unterrichtsplanung/templates" "$DEPLOY_DIR/unterrichtsplanung/"
+cp -r "$SOURCE_DIR/unterrichtsplanung/static" "$DEPLOY_DIR/unterrichtsplanung/"
 
+echo "📦 Installiere Unterrichtsplanung npm-Pakete..."
+cd "$DEPLOY_DIR/unterrichtsplanung"
+npm install --production
 # ── Python dependencies ───────────────────────────────────
 echo ""
 echo "🐍 Prüfe Python-Abhängigkeiten..."
@@ -122,6 +135,13 @@ pm2 describe "leichte-sprache" > /dev/null 2>&1 && {
     pm2 start ecosystem.config.js --only "leichte-sprache"
 }
 
+pm2 describe "unterrichtsplanung" > /dev/null 2>&1 && {
+    pm2 restart "unterrichtsplanung"
+} || {
+    cd "$DEPLOY_DIR"
+    pm2 start ecosystem.config.js --only "unterrichtsplanung"
+}
+
 pm2 describe "gateway" > /dev/null 2>&1 && {
     pm2 restart "gateway"
 } || {
@@ -137,6 +157,7 @@ echo ""
 echo "   Gateway:          http://127.0.0.1:3000  →  / (nginx)"
 echo "   Bildungsplan:     http://127.0.0.1:5001  →  /bildungsplan/"
 echo "   Leichte Sprache:  http://127.0.0.1:5000  →  /leichte-sprache/"
+echo "   Unterrichtspl.:   http://127.0.0.1:5002  →  /unterrichtsplanung/"
 echo ""
 echo "   Nächste Schritte:"
 echo "   1. Nginx-Config aktualisieren (siehe nginx.conf)"

@@ -113,6 +113,44 @@ button, input, textarea, select { font-family: inherit; touch-action: manipulati
     background: rgba(201, 168, 76, 0.15);
 }
 
+.site-topbar-nav button {
+    color: #CCCCCC;
+    font-size: 0.9rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    transition: background 0.2s;
+    white-space: nowrap;
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+}
+
+.site-topbar-nav button:hover {
+    background: rgba(201, 168, 76, 0.15);
+}
+
+/* ── Skip link ───────────────────────────────────────── */
+.skip-link {
+    position: absolute;
+    top: -100%;
+    left: 0;
+    background: var(--near-black);
+    color: #fff;
+    padding: 8px 16px;
+    z-index: 10000;
+    font-size: 0.9rem;
+    border-bottom: 2px solid var(--accent);
+    text-decoration: none;
+}
+
+.skip-link:focus {
+    top: 0;
+}
+
+
 /* ── Header ──────────────────────────────────────────── */
 .hero { flex-shrink: 0; margin-bottom: 8px; padding-top: 16px; }
 
@@ -181,6 +219,7 @@ button, input, textarea, select { font-family: inherit; touch-action: manipulati
 .persona-bar select:focus {
     outline: none;
     border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(201, 168, 76, 0.35);
 }
 
 .small-btn {
@@ -337,7 +376,7 @@ main {
     color: var(--text);
     font-size: 1.4rem;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
     flex-shrink: 0;
     display: flex;
     align-items: center;
@@ -374,11 +413,14 @@ main {
     padding: 12px 16px;
     font-size: 0.95rem;
     resize: none;
-    outline: none;
     transition: border-color 0.2s;
 }
 
-.input-row textarea:focus { border-color: var(--accent); }
+.input-row textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(201, 168, 76, 0.35);
+}
 .input-row textarea:disabled { opacity: 0.4; }
 
 .send-btn {
@@ -494,6 +536,7 @@ main {
 .form-group select:focus {
     outline: none;
     border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(201, 168, 76, 0.35);
 }
 
 .form-group textarea { resize: vertical; }
@@ -565,6 +608,7 @@ hr {
     .site-topbar .brand { padding: 10px 0; font-size: 1rem; gap: 8px; }
     .site-topbar .brand img { width: 28px; height: 28px; }
     .site-topbar-nav a { padding: 0 10px; font-size: 0.8rem; }
+    .site-topbar-nav button { padding: 0 10px; font-size: 0.8rem; }
 }
 
 @media (max-width: 900px) and (orientation: landscape) and (max-height: 480px) {
@@ -691,4 +735,12 @@ hr {
     flex-shrink: 0;
 }
 .sim-sidebar-close:hover { color: var(--danger); }
+
+/* ── Reduced motion ─────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+    .bubble { animation: none; }
+    .mic-btn.recording { animation: none; }
+    .sim-sidebar { transition-duration: 0.01ms; }
+    * { transition-duration: 0.01ms !important; }
+}
 

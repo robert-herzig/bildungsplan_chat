@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Unterrichtsplanung – EulenAI</title>
+  <link rel="stylesheet" href="./static/style.css">
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Zum Hauptinhalt springen</a>
+
+  <nav class="site-topbar" aria-label="Seitennavigation">
+    <a href="/" class="brand"><img src="/shared/static/img/euletranspa.png" alt=""><span>Eulen<span class="gold">AI</span></span></a>
+    <div class="site-topbar-nav">
+      <a href="/bildungsplan/">Bildungsplan</a>
+      <a href="/bildungsplan/conversation">Elterngespräch</a>
+      <a href="/leichte-sprache/">Leichte Sprache</a>
+      <a href="/leichte-sprache/notizen">Notizen</a>
+      <a href="/unterrichtsplanung/" class="active">Unterrichtsplanung</a>
+      <button id="adminNavBtn" style="display:none;">Verwaltung</button>
+      <button id="topbarLogoutBtn" style="color:#C9A84C;">Abmelden</button>
+    </div>
+  </nav>
+
+  <div class="app-layout" id="main-content">
+
+    <!-- ── Input panel ─────────────────────────────────────── -->
+    <aside class="input-panel" aria-label="Eingabebereich">
+      <div class="input-panel-inner">
+        <h1 class="panel-title">Unterrichtsskizze erstellen</h1>
+
+        <p class="section-label">Basisdaten</p>
+
+        <div class="form-group">
+          <label for="thema">Thema / Titel der Stunde *</label>
+          <input type="text" id="thema" placeholder="z. B. Einführung Buchstabe U, Zoo Animals, Geld">
+        </div>
+
+        <div class="row-2">
+          <div class="form-group">
+            <label for="klasse">Klasse / Gruppe *</label>
+            <input type="text" id="klasse" placeholder="z. B. Grundstufe 1, H6, BOG">
+          </div>
+          <div class="form-group">
+            <label for="fach">Fach</label>
+            <input type="text" id="fach" placeholder="z. B. Deutsch, Englisch">
+          </div>
+        </div>
+
+        <div class="row-2">
+          <div class="form-group">
+            <label for="datum">Datum</label>
+            <input type="date" id="datum">
+          </div>
+          <div class="form-group">
+            <label for="uhrzeit">Uhrzeit</label>
+            <input type="text" id="uhrzeit" placeholder="z. B. 9:00–10:00">
+          </div>
+        </div>
+
+        <hr class="section-divider">
+        <p class="section-label">Personen</p>
+
+        <div class="form-group">
+          <label for="lehrkraft">Lehrkraft / Anwärterin</label>
+          <input type="text" id="lehrkraft" list="dlLehrkraft" placeholder="Name der planenden Lehrkraft" autocomplete="off">
+          <datalist id="dlLehrkraft"></datalist>
+        </div>
+        <div class="form-group">
+          <label for="anwesendeErwachsene">Anwesende Erwachsene</label>
+          <input type="text" id="anwesendeErwachsene" list="dlErwachsene" placeholder="z. B. Frau Müller, Herr Schmidt (Assistenz)" autocomplete="off">
+          <datalist id="dlErwachsene"></datalist>
+        </div>
+        <div class="form-group">
+          <label for="anwesendeSchueler">Anwesende SuS</label>
+          <input type="text" id="anwesendeSchueler" placeholder="z. B. Anno, Ben, Erika, Niklas (6 SuS)">
+        </div>
+
+        <hr class="section-divider">
+        <div class="section-header-row">
+          <p class="section-label">Schülerdatenbank</p>
+          <button id="addStudentBtn" class="btn-add-small" type="button">+ Neu</button>
+        </div>
+        <div id="studentLibrary" class="student-library">
+          <p class="student-library-empty">Noch keine Schüler/innen gespeichert.</p>
+        </div>
+
+        <hr class="section-divider">
+        <p class="section-label">SuS-Informationen</p>
+
+        <div class="form-group">
+          <label for="schuelerInfo">Kompetenzniveaus, Förderbedarf, Besonderheiten</label>
+          <textarea id="schuelerInfo" class="tall" placeholder="Beschreibe die einzelnen SuS: Kompetenzniveau, kommunikative Mittel (Lautsprache, Gebärden, Talker), motorische Besonderheiten, Verhaltensauffälligkeiten, bereits Erlerntes, differenzierungsbedürftige Aspekte.
+
+Beispiel:
+– Anno (Klasse 2): liest Silben, selbstständiges Arbeiten stärken
+– Ben: motorische Schwierigkeiten, braucht Schreibunterstützung
+– Erika: Frustrationsintoleranz, positive Verstärkung wichtig"></textarea>
+        </div>
+
+        <hr class="section-divider">
+        <p class="section-label">Stunden-Notizen &amp; Quellen</p>
+
+        <div class="form-group">
+          <label for="notizen">Ideen, Materialien, Methoden, Quellen</label>
+          <textarea id="notizen" class="tall" placeholder="Beschreibe deine Ideen für die Stunde: geplante Aktivitäten, Spiele, Lieder, Geschichten, Materialien, Methoden, Bezug zur Vorstunde, Lernziele, besondere Anforderungen, Raumbedingungen etc.
+
+Beispiel:
+– Einstieg: Geschichte zum Buchstaben vorlesen
+– Lerntheke mit 4 Stationen: Tablet, Schreibheft, Sandkiste, Zusatz-AB
+– Abschluss: Bewegungsspiel mit Bildkarten im Flur
+– Dauer: 60 Minuten, dann Pause"></textarea>
+        </div>
+
+        <button class="btn-generate" id="generateBtn" aria-label="Unterrichtsskizze generieren">
+          ✦ Unterrichtsskizze generieren
+        </button>
+
+        <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:0.88rem;cursor:pointer;color:var(--muted);">
+          <input type="checkbox" id="webSearchChk" style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;">
+          Websuche einbeziehen
+          <span style="font-size:0.78rem;color:var(--muted);">(Tagesschau, Wikipedia …)</span>
+        </label>
+        <button class="btn-reset" id="resetBtn" aria-label="Formular leeren">
+          Formular leeren
+        </button>
+
+        <!-- Admin only: prompt editor trigger -->
+        <button class="btn-reset" id="editPromptBtn" style="display:none; margin-top:16px; border-color:#C9A84C; color:#8B6914;">
+          ⚙ System-Prompt bearbeiten
+        </button>
+      </div>
+    </aside>
+
+    <!-- ── Output panel ────────────────────────────────────── -->
+    <main class="output-panel">
+      <div class="output-toolbar">
+        <h2>Unterrichtsskizze</h2>
+        <button class="btn-action" id="copyBtn" disabled aria-label="In Zwischenablage kopieren">Kopieren</button>
+        <button class="btn-action" id="downloadBtn" disabled aria-label="Als Textdatei herunterladen">Download</button>
+        <button class="btn-action" id="printBtn" disabled aria-label="Drucken" onclick="window.print()">Drucken</button>
+      </div>
+
+      <div class="output-scroller" id="outputScroller">
+        <div class="empty-state" id="emptyState">
+          <div class="icon">📋</div>
+          <h3>Noch keine Unterrichtsskizze</h3>
+          <p>Fülle das Formular links aus und klicke auf „Unterrichtsskizze generieren". Die KI erstellt dann eine vollständige Unterrichtsskizze im SBBZ-GEnt-Format.</p>
+        </div>
+        <details id="fliesSummary" class="flies-summary" style="display:none;">
+          <summary>Fließtextzusammenfassung</summary>
+          <div id="fliesSummaryContent" class="flies-summary-content"></div>
+        </details>
+        <div class="lesson-plan" id="lessonPlan" style="display:none;"></div>
+      </div>
+
+      <div class="status-bar" id="statusBar" role="status" aria-live="polite">
+        <div class="spinner" aria-hidden="true"></div>
+        <span id="statusText">Unterrichtsskizze wird generiert …</span>
+      </div>
+    </main>
+  </div>
+
+  <!-- ── Student editor modal ─────────────────────────────── -->
+  <div class="student-modal-wrap" id="studentModalWrap" role="dialog" aria-modal="true" aria-labelledby="studentModalTitle">
+    <div class="student-modal-box">
+      <div class="student-modal-header">
+        <h3 id="studentModalTitle">Schüler/in hinzufügen</h3>
+        <button class="btn-close-modal" id="closeStudentModal" aria-label="Schließen">✕</button>
+      </div>
+      <div class="student-modal-body">
+        <input type="hidden" id="studentEditId">
+        <div class="form-group">
+          <label for="studentEditName">Name *</label>
+          <input type="text" id="studentEditName" placeholder="Vorname oder Kürzel">
+        </div>
+        <div class="form-group">
+          <label for="studentEditProfil">Profil / Förderbedarf</label>
+          <textarea id="studentEditProfil" style="min-height:120px;" placeholder="Kompetenzniveau, Behinderung/Förderschwerpunkt, kommunikative Mittel, sonderpäd. Ziele, Besonderheiten…"></textarea>
+        </div>
+      </div>
+      <div class="student-modal-footer">
+        <button class="btn-del-danger" id="studentModalDeleteBtn" style="display:none; margin-right:auto;">Löschen</button>
+        <button class="btn-cancel" id="cancelStudentModal">Abbrechen</button>
+        <button class="btn-save" id="saveStudentBtn">Speichern</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── System-Prompt editor modal (admin only) ──────────── -->
+  <div class="prompt-editor-wrap" id="promptEditorWrap" role="dialog" aria-modal="true" aria-labelledby="promptEditorTitle">
+    <div class="prompt-editor-box">
+      <div class="prompt-editor-header">
+        <h3 id="promptEditorTitle">System-Prompt bearbeiten</h3>
+        <button class="btn-close-modal" id="closePromptEditor" aria-label="Schließen">✕</button>
+      </div>
+      <div class="prompt-editor-body">
+        <textarea id="promptTextarea" spellcheck="false" aria-label="System-Prompt"></textarea>
+      </div>
+      <div class="prompt-editor-footer">
+        <button class="btn-cancel" id="cancelPromptEditor">Abbrechen</button>
+        <button class="btn-save" id="savePromptBtn">Speichern</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const BASE = '/unterrichtsplanung';
+
+    // ── Elements ──────────────────────────────────────────────
+    const generateBtn    = document.getElementById('generateBtn');
+    const resetBtn       = document.getElementById('resetBtn');
+    const copyBtn        = document.getElementById('copyBtn');
+    const downloadBtn    = document.getElementById('downloadBtn');
+    const printBtn       = document.getElementById('printBtn');
+    const emptyState     = document.getElementById('emptyState');
+    const lessonPlan     = document.getElementById('lessonPlan');
+    const statusBar      = document.getElementById('statusBar');
+    const statusText     = document.getElementById('statusText');
+    const editPromptBtn  = document.getElementById('editPromptBtn');
+    const promptWrap     = document.getElementById('promptEditorWrap');
+    const promptTextarea = document.getElementById('promptTextarea');
+    const savePromptBtn  = document.getElementById('savePromptBtn');
+    const adminNavBtn    = document.getElementById('adminNavBtn');
+    const webSearchChk   = document.getElementById('webSearchChk');
+
+    // ── Field IDs ─────────────────────────────────────────────
+    const FIELDS = ['thema','klasse','fach','datum','uhrzeit','lehrkraft',
+                    'anwesendeErwachsene','anwesendeSchueler','schuelerInfo','notizen'];
+
+    // ── Persist form to localStorage ──────────────────────────
+    const STORAGE_KEY = 'eulenai_unterricht_form';
+    function saveForm() {
+      const data = {};
+      FIELDS.forEach(id => { data[id] = document.getElementById(id).value; });
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }
+    function loadForm() {
+      try {
+        const data = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+        FIELDS.forEach(id => {
+          if (data[id]) document.getElementById(id).value = data[id];
+        });
+      } catch {}
+    }
+    FIELDS.forEach(id => {
+      document.getElementById(id).addEventListener('input', saveForm);
+    });
+
+    // ── Simple Markdown → HTML renderer ──────────────────────
+    function md2html(md) {
+      const lines = md.split('\n');
+      let html = '';
+      let inTable = false;
+      let inUl = false;
+      let tableRows = [];
+
+      function flushUl() {
+        if (inUl) { html += '</ul>\n'; inUl = false; }
+      }
+      function flushTable() {
+        if (!inTable) return;
+        inTable = false;
+        if (tableRows.length < 2) {
+          html += tableRows.map(r => `<p>${r}</p>`).join('\n');
+          tableRows = [];
+          return;
+        }
+        html += '<div class="plan-table-wrap"><table>\n';
+        tableRows.forEach((row, idx) => {
+          const cells = row.replace(/^\||\|$/g,'').split('|').map(c => c.trim());
+          if (idx === 1 && cells.every(c => /^[-:\s]+$/.test(c))) return; // separator
+          const tag = idx === 0 ? 'th' : 'td';
+          html += '<tr>' + cells.map(c => `<${tag}>${renderInline(c)}</${tag}>`).join('') + '</tr>\n';
+        });
+        html += '</table></div>\n';
+        tableRows = [];
+      }
+
+      function renderInline(text) {
+        return text
+          .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+          .replace(/\*(.+?)\*/g, '<em>$1</em>')
+          .replace(/<br>/g, '<br>')
+          .replace(/\\n/g, '<br>');
+      }
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+
+        // Table row
+        if (/^\|/.test(line)) {
+          flushUl();
+          inTable = true;
+          tableRows.push(line);
+          continue;
+        }
+
+        // Flush table if we're done
+        if (inTable) { flushTable(); }
+
+        // Headings
+        const h1m = line.match(/^#\s+(.+)/);
+        const h2m = line.match(/^##\s+(.+)/);
+        const h3m = line.match(/^###\s+(.+)/);
+        if (h3m) { flushUl(); html += `<h3>${renderInline(h3m[1])}</h3>\n`; continue; }
+        if (h2m) { flushUl(); html += `<h2>${renderInline(h2m[1])}</h2>\n`; continue; }
+        if (h1m) { flushUl(); html += `<h1>${renderInline(h1m[1])}</h1>\n`; continue; }
+
+        // HR
+        if (/^---+$/.test(line.trim())) { flushUl(); html += '<hr>\n'; continue; }
+
+        // List item
+        const lim = line.match(/^[-*]\s+(.+)/);
+        if (lim) {
+          if (!inUl) { html += '<ul>\n'; inUl = true; }
+          html += `<li>${renderInline(lim[1])}</li>\n`;
+          continue;
+        }
+
+        flushUl();
+
+        // Empty line
+        if (!line.trim()) { html += '\n'; continue; }
+
+        // Paragraph
+        html += `<p>${renderInline(line)}</p>\n`;
+      }
+
+      flushUl();
+      flushTable();
+      return html;
+    }
+
+    // ── Raw markdown accumulator ──────────────────────────────
+    let rawMarkdown = '';
+
+    // ── Generate ──────────────────────────────────────────────
+    generateBtn.addEventListener('click', async () => {
+      const data = {};
+      FIELDS.forEach(id => { data[id] = document.getElementById(id).value.trim(); });
+      data.webSearch = webSearchChk.checked;
+
+      if (!data.thema && !data.notizen) {
+        alert('Bitte mindestens ein Thema oder Notizen angeben.');
+        return;
+      }
+
+      rawMarkdown = '';
+      emptyState.style.display = 'none';
+      document.getElementById('fliesSummary').style.display = 'none';
+      lessonPlan.style.display = 'block';
+      lessonPlan.innerHTML = '';
+      generateBtn.disabled = true;
+      copyBtn.disabled = true;
+      downloadBtn.disabled = true;
+      printBtn.disabled = true;
+      statusBar.classList.add('visible');
+      statusText.textContent = 'Unterrichtsskizze wird generiert …';
+
+      try {
+        const resp = await fetch(BASE + '/generate_stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data)
+        });
+
+        if (!resp.ok || !resp.body) throw new Error('Server-Fehler ' + resp.status);
+
+        const reader  = resp.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buf = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          const parts = buf.split('\n\n');
+          buf = parts.pop() || '';
+          for (const part of parts) {
+            const m = part.match(/^data:\s*(.*)$/s);
+            if (!m) continue;
+            const payload = m[1];
+            if (payload === '[DONE]') break;
+            if (payload.startsWith('ERROR:')) {
+              lessonPlan.innerHTML = `<div class="error-msg">Fehler: ${payload.slice(6).trim()}</div>`;
+              generateBtn.disabled = false;
+              statusBar.classList.remove('visible');
+              return;
+            }
+            try {
+              rawMarkdown = JSON.parse(payload);
+              // Handle __STATUS__ progress messages from server
+              if (typeof rawMarkdown === 'string' && rawMarkdown.startsWith('__STATUS__')) {
+                statusText.textContent = rawMarkdown.slice(10);
+              } else {
+                lessonPlan.innerHTML = md2html(rawMarkdown);
+              }
+            } catch {}
+          }
+        }
+
+        // Final render — split summary vs plan
+        renderPlan(rawMarkdown);
+        copyBtn.disabled = false;
+        downloadBtn.disabled = false;
+        printBtn.disabled = false;
+        statusText.textContent = 'Fertig!';
+        setTimeout(() => statusBar.classList.remove('visible'), 2500);
+      } catch (e) {
+        lessonPlan.innerHTML = `<div class="error-msg">Fehler: ${e.message}</div>`;
+        statusBar.classList.remove('visible');
+      } finally {
+        generateBtn.disabled = false;
+        saveForm();
+        savePrefs(); // fire-and-forget
+      }
+    });
+
+    // ── Copy ─────────────────────────────────────────────────
+    copyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(rawMarkdown);
+        const orig = copyBtn.textContent;
+        copyBtn.textContent = 'Kopiert ✓';
+        setTimeout(() => { copyBtn.textContent = orig; }, 2000);
+      } catch {
+        alert('Kopieren fehlgeschlagen. Bitte manuell kopieren.');
+      }
+    });
+
+    // ── Download ──────────────────────────────────────────────
+    downloadBtn.addEventListener('click', () => {
+      const thema = document.getElementById('thema').value.trim() || 'Unterrichtsskizze';
+      const datumVal = document.getElementById('datum').value;
+      const filename = `Uskizze_${thema.replace(/\s+/g,'_')}_${datumVal || 'o.D.'}.md`;
+      const blob = new Blob([rawMarkdown], { type: 'text/markdown;charset=utf-8' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+
+    // ── Reset form ────────────────────────────────────────────
+    resetBtn.addEventListener('click', () => {
+      if (!confirm('Formular leeren?')) return;
+      FIELDS.forEach(id => { document.getElementById(id).value = ''; });
+      localStorage.removeItem(STORAGE_KEY);
+    });
+
+    // ── Logout ────────────────────────────────────────────────
+    document.getElementById('topbarLogoutBtn').addEventListener('click', async (e) => {
+      e.preventDefault();
+      await fetch('/auth/logout', { method: 'POST' });
+      window.location.href = '/login';
+    });
+
+    // ── Admin nav button ──────────────────────────────────────
+    (async () => {
+      try {
+        const r = await fetch('/bildungsplan/auth/me');
+        if (r.ok) {
+          const data = await r.json();
+          if (data.user && data.user.username === 'admin') {
+            adminNavBtn.style.display = '';
+            adminNavBtn.addEventListener('click', () => { window.location.href = '/bildungsplan/'; });
+            editPromptBtn.style.display = '';
+          }
+        }
+      } catch {}
+    })();
+
+    // ── Prompt editor ─────────────────────────────────────────
+    editPromptBtn.addEventListener('click', async () => {
+      try {
+        const r = await fetch(BASE + '/prompt');
+        if (r.ok) {
+          const d = await r.json();
+          promptTextarea.value = d.prompt || '';
+        }
+      } catch {}
+      promptWrap.classList.add('open');
+      promptTextarea.focus();
+    });
+
+    document.getElementById('closePromptEditor').addEventListener('click', () => {
+      promptWrap.classList.remove('open');
+    });
+    document.getElementById('cancelPromptEditor').addEventListener('click', () => {
+      promptWrap.classList.remove('open');
+    });
+    promptWrap.addEventListener('click', (e) => {
+      if (e.target === promptWrap) promptWrap.classList.remove('open');
+    });
+    promptWrap.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') promptWrap.classList.remove('open');
+    });
+
+    savePromptBtn.addEventListener('click', async () => {
+      const prompt = promptTextarea.value.trim();
+      if (!prompt) return;
+      savePromptBtn.disabled = true;
+      savePromptBtn.textContent = 'Speichern …';
+      try {
+        const r = await fetch(BASE + '/prompt', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt })
+        });
+        if (r.ok) {
+          promptWrap.classList.remove('open');
+        } else {
+          alert('Fehler beim Speichern.');
+        }
+      } catch { alert('Fehler beim Speichern.'); }
+      finally {
+        savePromptBtn.disabled = false;
+        savePromptBtn.textContent = 'Speichern';
+      }
+    });
+
+    // ── User data (teachers, student profiles) ──────────────
+    let userData = { lehrkraefte: [], erwachsene: [], schueler: [], lastPrefs: {} };
+
+    function escHtml(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    async function loadUserData() {
+      try {
+        const r = await fetch(BASE + '/userdata');
+        if (r.ok) {
+          userData = await r.json();
+          userData.lehrkraefte = userData.lehrkraefte || [];
+          userData.erwachsene  = userData.erwachsene  || [];
+          userData.schueler    = userData.schueler    || [];
+          userData.lastPrefs   = userData.lastPrefs   || {};
+        }
+      } catch {}
+
+      // Populate datalists
+      const dlLk = document.getElementById('dlLehrkraft');
+      dlLk.innerHTML = userData.lehrkraefte.map(n => `<option value="${escHtml(n)}">`).join('');
+
+      const dlEw = document.getElementById('dlErwachsene');
+      // Show last-used full string first, then individual names
+      const ewOptions = [];
+      if (userData.lastPrefs.anwesendeErwachsene)
+        ewOptions.push(`<option value="${escHtml(userData.lastPrefs.anwesendeErwachsene)}">`);
+      userData.erwachsene.forEach(n => {
+        if (n !== userData.lastPrefs.anwesendeErwachsene)
+          ewOptions.push(`<option value="${escHtml(n)}">`);
+      });
+      dlEw.innerHTML = ewOptions.join('');
+
+      // Pre-fill empty fields from lastPrefs (server-side user prefs take priority over localStorage)
+      const lp = userData.lastPrefs;
+      if (lp.lehrkraft && !document.getElementById('lehrkraft').value)
+        document.getElementById('lehrkraft').value = lp.lehrkraft;
+      if (lp.anwesendeErwachsene && !document.getElementById('anwesendeErwachsene').value)
+        document.getElementById('anwesendeErwachsene').value = lp.anwesendeErwachsene;
+      if (lp.klasse && !document.getElementById('klasse').value)
+        document.getElementById('klasse').value = lp.klasse;
+      if (lp.fach && !document.getElementById('fach').value)
+        document.getElementById('fach').value = lp.fach;
+
+      renderStudentLibrary();
+    }
+
+    function renderStudentLibrary() {
+      const lib = document.getElementById('studentLibrary');
+      if (userData.schueler.length === 0) {
+        lib.innerHTML = '<p class="student-library-empty">Noch keine Schüler/innen gespeichert.</p>';
+        return;
+      }
+      lib.innerHTML = userData.schueler.map(s => `
+        <div class="student-card" data-id="${escHtml(s.id)}">
+          <div class="student-card-info">
+            <strong class="student-card-name">${escHtml(s.name)}</strong>
+          </div>
+          <div class="student-card-actions">
+            <button class="btn-student-add" data-id="${escHtml(s.id)}" title="Zum Plan hinzufügen">+</button>
+            <button class="btn-student-edit" data-id="${escHtml(s.id)}" title="Bearbeiten">✏</button>
+          </div>
+        </div>`).join('');
+      lib.querySelectorAll('.btn-student-add').forEach(btn =>
+        btn.addEventListener('click', () => addStudentToForm(btn.dataset.id)));
+      lib.querySelectorAll('.btn-student-edit').forEach(btn =>
+        btn.addEventListener('click', () => openStudentModal(btn.dataset.id)));
+    }
+
+    function addStudentToForm(id) {
+      const s = userData.schueler.find(x => x.id === id);
+      if (!s) return;
+      const susEl  = document.getElementById('anwesendeSchueler');
+      const cur = susEl.value.trim();
+      if (!cur) susEl.value = s.name;
+      else if (!cur.includes(s.name)) susEl.value = cur + ', ' + s.name;
+
+      const infoEl = document.getElementById('schuelerInfo');
+      const entry  = `– ${s.name}: ${s.profil || ''}`;
+      if (!infoEl.value.includes(s.name))
+        infoEl.value = infoEl.value.trim() ? infoEl.value.trim() + '\n' + entry : entry;
+      saveForm();
+    }
+
+    // ── Student modal ─────────────────────────────────────────
+    const studentModalWrap = document.getElementById('studentModalWrap');
+    const studentEditId    = document.getElementById('studentEditId');
+    const studentEditName  = document.getElementById('studentEditName');
+    const studentEditProfil= document.getElementById('studentEditProfil');
+    const studentModalTitle= document.getElementById('studentModalTitle');
+
+    const studentModalDeleteBtn = document.getElementById('studentModalDeleteBtn');
+
+    function openStudentModal(id) {
+      if (id) {
+        const s = userData.schueler.find(x => x.id === id);
+        if (!s) return;
+        studentModalTitle.textContent = 'Schüler/in bearbeiten';
+        studentEditId.value    = s.id;
+        studentEditName.value  = s.name;
+        studentEditProfil.value= s.profil || '';
+        studentModalDeleteBtn.style.display = 'inline-block';
+      } else {
+        studentModalTitle.textContent = 'Schüler/in hinzufügen';
+        studentEditId.value = '';
+        studentEditName.value = '';
+        studentEditProfil.value = '';
+        studentModalDeleteBtn.style.display = 'none';
+      }
+      studentModalWrap.classList.add('open');
+      studentEditName.focus();
+    }
+    function closeStudentModal() { studentModalWrap.classList.remove('open'); }
+
+    document.getElementById('addStudentBtn').addEventListener('click', () => openStudentModal(null));
+    studentModalDeleteBtn.addEventListener('click', async () => {
+      const id = studentEditId.value;
+      if (!id) return;
+      closeStudentModal();
+      await deleteStudent(id);
+    });
+    document.getElementById('closeStudentModal').addEventListener('click', closeStudentModal);
+    document.getElementById('cancelStudentModal').addEventListener('click', closeStudentModal);
+    studentModalWrap.addEventListener('click', e => { if (e.target === studentModalWrap) closeStudentModal(); });
+    studentModalWrap.addEventListener('keydown', e => { if (e.key === 'Escape') closeStudentModal(); });
+
+    document.getElementById('saveStudentBtn').addEventListener('click', async () => {
+      const name = studentEditName.value.trim();
+      if (!name) { studentEditName.focus(); return; }
+      const btn = document.getElementById('saveStudentBtn');
+      btn.disabled = true; btn.textContent = 'Speichern …';
+      try {
+        const r = await fetch(BASE + '/userdata/student', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: studentEditId.value || null, name, profil: studentEditProfil.value.trim() })
+        });
+        if (r.ok) { userData.schueler = (await r.json()).schueler; renderStudentLibrary(); closeStudentModal(); }
+      } catch {}
+      btn.disabled = false; btn.textContent = 'Speichern';
+    });
+
+    async function deleteStudent(id) {
+      const s = userData.schueler.find(x => x.id === id);
+      if (!s || !confirm(`Schüler/in „${s.name}" wirklich aus der Datenbank löschen?`)) return;
+      try {
+        const r = await fetch(BASE + '/userdata/student/' + encodeURIComponent(id), { method: 'DELETE' });
+        if (r.ok) { userData.schueler = (await r.json()).schueler; renderStudentLibrary(); }
+      } catch {}
+    }
+
+    // ── Render plan (with optional Fließtextzusammenfassung) ──
+    function renderPlan(md) {
+      const SEP = '<!-- END_SUMMARY -->';
+      const idx = md.indexOf(SEP);
+      const summaryEl = document.getElementById('fliesSummary');
+      const summaryContent = document.getElementById('fliesSummaryContent');
+      if (idx >= 0) {
+        const summaryMd = md.slice(0, idx).trim();
+        const planMd    = md.slice(idx + SEP.length).trim();
+        summaryContent.innerHTML = md2html(summaryMd);
+        summaryEl.style.display  = '';
+        lessonPlan.innerHTML     = md2html(planMd);
+      } else {
+        summaryEl.style.display = 'none';
+        lessonPlan.innerHTML    = md2html(md);
+      }
+    }
+
+    // ── Save prefs after generation ───────────────────────────
+    async function savePrefs() {
+      try {
+        await fetch(BASE + '/userdata/prefs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            lehrkraft:          document.getElementById('lehrkraft').value.trim(),
+            anwesendeErwachsene:document.getElementById('anwesendeErwachsene').value.trim(),
+            klasse:             document.getElementById('klasse').value.trim(),
+            fach:               document.getElementById('fach').value.trim(),
+          })
+        });
+        // Refresh datalists with newly saved values
+        const r = await fetch(BASE + '/userdata');
+        if (r.ok) { const d = await r.json(); userData = d; }
+        const dlLk = document.getElementById('dlLehrkraft');
+        dlLk.innerHTML = (userData.lehrkraefte || []).map(n => `<option value="${escHtml(n)}">`).join('');
+        const dlEw = document.getElementById('dlErwachsene');
+        const ewOpts = [];
+        if (userData.lastPrefs?.anwesendeErwachsene)
+          ewOpts.push(`<option value="${escHtml(userData.lastPrefs.anwesendeErwachsene)}">`);
+        (userData.erwachsene || []).forEach(n => {
+          if (n !== userData.lastPrefs?.anwesendeErwachsene)
+            ewOpts.push(`<option value="${escHtml(n)}">`);
+        });
+        dlEw.innerHTML = ewOpts.join('');
+      } catch {}
+    }
+
+    // ── Init ──────────────────────────────────────────────────
+    loadForm();
+    loadUserData();
+  </script>
+</body>
+</html>

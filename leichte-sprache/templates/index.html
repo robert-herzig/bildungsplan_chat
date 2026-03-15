@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="./static/style.css">
 </head>
 <body>
+  <a href="#main-content" class="skip-link">Zum Hauptinhalt springen</a>
   <nav class="site-topbar">
     <a href="/" class="brand"><img src="/shared/static/img/euletranspa.png" alt=""><span>Eulen<span class="gold">AI</span></span></a>
     <div class="site-topbar-nav">
@@ -14,14 +15,16 @@
       <a href="/bildungsplan/conversation">Elterngespräch</a>
       <a href="/leichte-sprache/">Leichte Sprache</a>
       <a href="/leichte-sprache/notizen">Notizen</a>
-      <a href="#" id="topbarLogoutBtn" style="color:#C9A84C;">Abmelden</a>
+      <a href="/unterrichtsplanung/">Unterrichtsplanung</a>
+      <button id="adminNavBtn" style="display:none;">Verwaltung</button>
+      <button id="topbarLogoutBtn" style="color:#C9A84C;">Abmelden</button>
     </div>
   </nav>
   <div class="ls-sidebar-backdrop" id="sidebarBackdrop"></div>
   <aside class="ls-sidebar" id="sidebar">
     <div class="ls-sidebar-header">
       <span>Verlauf</span>
-      <button class="ls-sidebar-close" id="sidebarCloseBtn" title="Schließen">✕</button>
+      <button class="ls-sidebar-close" id="sidebarCloseBtn" title="Schließen" aria-label="Schließen">✕</button>
     </div>
     <div class="ls-sidebar-list" id="sidebarList"></div>
     <div class="ls-sidebar-footer">
@@ -43,7 +46,7 @@
       </div>
     </header>
 
-    <main>
+    <main id="main-content">
       <div id="translatePanel" class="tab-panel active">
         <section class="card">
           <label id="inputLabel" for="inputText">Eingabetext (Leichte Sprache)</label>
@@ -56,7 +59,7 @@
             </label>
           </div>
           <div id="loading" class="loading" style="display:none;">Übersetze …</div>
-          <div id="error" class="error" style="display:none;"></div>
+          <div id="error" class="error" style="display:none;" aria-live="polite"></div>
         </section>
 
         <section id="outputSection" class="card">
@@ -75,9 +78,9 @@
     </footer>
   </div>
 
-  <div id="promptModal" class="modal" style="display:none;">
+  <div id="promptModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="promptModalTitle" style="display:none;">
     <div class="modal-content">
-      <h3>System‑Prompts anpassen (<span id="promptTypeLabel">Leichte Sprache</span>)</h3>
+      <h3 id="promptModalTitle">System‑Prompts anpassen (<span id="promptTypeLabel">Leichte Sprache</span>)</h3>
       <div class="prompt-option-group">
         <button class="prompt-option active" data-prompt-option="leichte">Leichte Sprache</button>
         <button class="prompt-option" data-prompt-option="einfache">Einfache Sprache</button>
@@ -282,6 +285,21 @@
       await fetch('/auth/logout', { method: 'POST' });
       window.location.href = '/login';
     });
+
+    // ── Admin nav button ──────────────────────────────────────
+    (async () => {
+      try {
+        const r = await fetch('/bildungsplan/auth/me');
+        if (r.ok) {
+          const data = await r.json();
+          if (data.user && data.user.username === 'admin') {
+            const btn = document.getElementById('adminNavBtn');
+            btn.style.display = '';
+            btn.addEventListener('click', () => { window.location.href = '/bildungsplan/'; });
+          }
+        }
+      } catch {}
+    })();
 
     // ── Translation history (localStorage) ──
     const HISTORY_KEY = 'eulenai_translate_history';

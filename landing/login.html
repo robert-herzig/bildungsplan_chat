@@ -111,12 +111,13 @@
       border: 1px solid var(--border);
       background: var(--off-white);
       color: var(--text);
-      outline: none;
       transition: border-color 0.2s;
     }
 
     .form-group input:focus {
+      outline: none;
       border-color: var(--gold);
+      box-shadow: 0 0 0 2px rgba(201, 168, 76, 0.35);
     }
 
     .login-btn {
@@ -166,9 +167,18 @@
     @media (max-width: 480px) {
       .login-card { padding: 32px 24px; }
     }
+
+    .skip-link {
+      position: absolute; top: -100%; left: 0;
+      background: #1A1A1A; color: #fff; padding: 8px 16px;
+      z-index: 10000; font-size: 0.9rem;
+      border-bottom: 2px solid #C9A84C; text-decoration: none;
+    }
+    .skip-link:focus { top: 0; }
   </style>
 </head>
 <body>
+  <a href="#main-content" class="skip-link">Zum Hauptinhalt springen</a>
 
   <nav class="topbar">
     <a href="/login" class="topbar-brand">
@@ -177,7 +187,7 @@
     </a>
   </nav>
 
-  <div class="login-wrapper">
+  <div class="login-wrapper" id="main-content">
     <div class="login-card">
       <h1>Anmelden</h1>
       <p class="subtitle">Melde dich an, um die EulenAI-Werkzeuge zu nutzen.</p>
@@ -192,7 +202,7 @@
           <input type="password" id="password" name="password" autocomplete="current-password" required>
         </div>
         <button type="submit" class="login-btn">Anmelden</button>
-        <p class="error-msg" id="errorMsg"></p>
+        <p class="error-msg" id="errorMsg" aria-live="polite"></p>
       </form>
     </div>
   </div>

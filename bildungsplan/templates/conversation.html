@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="./static/conversation.css">
 </head>
 <body>
+  <a href="#main-content" class="skip-link">Zum Hauptinhalt springen</a>
   <nav class="site-topbar">
     <a href="/" class="brand"><img src="/shared/static/img/euletranspa.png" alt=""><span>Eulen<span class="gold">AI</span></span></a>
     <div class="site-topbar-nav">
@@ -14,7 +15,9 @@
       <a href="/bildungsplan/conversation">Elterngespräch</a>
       <a href="/leichte-sprache/">Leichte Sprache</a>
       <a href="/leichte-sprache/notizen">Notizen</a>
-      <a href="#" id="topbarLogoutBtn" style="color:#C9A84C;">Abmelden</a>
+      <a href="/unterrichtsplanung/">Unterrichtsplanung</a>
+      <button id="adminNavBtn" style="display:none;">Verwaltung</button>
+      <button id="topbarLogoutBtn" style="color:#C9A84C;">Abmelden</button>
     </div>
   </nav>
   <div class="app-layout">
@@ -23,7 +26,7 @@
       <span>Gespräche</span>
       <div style="display:flex;gap:6px;align-items:center;">
         <button class="sim-sidebar-new" id="simNewBtn" title="Neues Gespräch">+ Neu</button>
-        <button class="sim-sidebar-close" id="simSidebarCloseBtn" title="Schließen">✕</button>
+        <button class="sim-sidebar-close" id="simSidebarCloseBtn" title="Schließen" aria-label="Schließen">✕</button>
       </div>
     </div>
     <div id="simSidebarList" class="sim-sidebar-list"></div>
@@ -37,8 +40,8 @@
           <p class="subtitle">Trainiere Elterngespräche an einem SBBZ GENT – Berufsschulstufe</p>
         </div>
         <div class="hero-actions">
-          <button id="simHistoryBtn" class="icon-btn" title="Gesprächsverlauf">📋</button>
-          <button id="presetsBtn" class="icon-btn" title="Persönlichkeiten verwalten">⚙</button>
+          <button id="simHistoryBtn" class="icon-btn" title="Gesprächsverlauf" aria-label="Gesprächsverlauf">📋</button>
+          <button id="presetsBtn" class="icon-btn" title="Persönlichkeiten verwalten" aria-label="Persönlichkeiten verwalten">⚙</button>
         </div>
       </div>
     </header>
@@ -62,7 +65,7 @@
     </div>
 
     <!-- ── Conversation transcript ─────────────────── -->
-    <main>
+    <main id="main-content">
       <div id="transcript" class="transcript">
         <div id="welcomeMsg" class="welcome-msg">
           <div class="welcome-icon">🗣️</div>
@@ -80,11 +83,11 @@
 
     <!-- ── Input area ──────────────────────────────── -->
     <div class="input-area">
-      <div id="statusBar" class="status-bar">Bereit</div>
+      <div id="statusBar" class="status-bar" aria-live="polite">Bereit</div>
       <div class="input-row">
-        <button id="micBtn" class="mic-btn" title="Mikrofon (Leertaste)" disabled>🎙️</button>
+        <button id="micBtn" class="mic-btn" title="Mikrofon (Leertaste)" aria-label="Mikrofon" disabled>🎙️</button>
         <textarea id="textInput" rows="1" placeholder="Oder tippe deine Antwort …" disabled></textarea>
-        <button id="sendTextBtn" class="send-btn" title="Senden" disabled>➤</button>
+        <button id="sendTextBtn" class="send-btn" title="Senden" aria-label="Senden" disabled>➤</button>
       </div>
       <div class="input-footer">
         <label class="checkbox">
@@ -102,11 +105,11 @@
   </div><!-- /app-layout -->
 
   <!-- ── Custom Presets Modal ──────────────────────── -->
-  <div id="presetsModal" class="modal hidden">
+  <div id="presetsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="presetsModalTitle">
     <div class="modal-content modal-wide">
       <div class="modal-header">
-        <h2>Persönlichkeiten verwalten</h2>
-        <button class="modal-close" id="closePresetsModal">✕</button>
+        <h2 id="presetsModalTitle">Persönlichkeiten verwalten</h2>
+        <button class="modal-close" id="closePresetsModal" aria-label="Schließen">✕</button>
       </div>
       <div class="modal-body">
         <div id="customPresetsList" class="presets-list"></div>
@@ -876,6 +879,21 @@ document.getElementById('topbarLogoutBtn').addEventListener('click', async (e) =
   await fetch('/auth/logout', { method: 'POST' });
   window.location.href = '/login';
 });
+
+// ── Admin nav button ────────────────────────────────────────
+(async () => {
+  try {
+    const r = await fetch('/bildungsplan/auth/me');
+    if (r.ok) {
+      const data = await r.json();
+      if (data.user && data.user.username === 'admin') {
+        const btn = document.getElementById('adminNavBtn');
+        btn.style.display = '';
+        btn.addEventListener('click', () => { window.location.href = '/bildungsplan/'; });
+      }
+    }
+  } catch {}
+})();
 
 // ── Simulator conversation sidebar ─────────────────────────
 const simSidebar = document.getElementById('simSidebar');

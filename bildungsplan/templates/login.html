@@ -94,6 +94,7 @@
     .form-group input:focus {
       outline: none;
       border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(201, 168, 76, 0.35);
     }
     .login-btn {
       width: 100%;
@@ -117,13 +118,22 @@
       font-size: 0.9rem;
       display: none;
     }
+
+    .skip-link {
+      position: absolute; top: -100%; left: 0;
+      background: #1A1A1A; color: #fff; padding: 8px 16px;
+      z-index: 10000; font-size: 0.9rem;
+      border-bottom: 2px solid var(--accent); text-decoration: none;
+    }
+    .skip-link:focus { top: 0; }
   </style>
 </head>
 <body>
+  <a href="#main-content" class="skip-link">Zum Hauptinhalt springen</a>
   <nav class="login-topbar">
     <a href="/"><img src="/shared/static/img/euletranspa.png" alt="">Eulen<span class="gold">AI</span></a>
   </nav>
-  <div class="login-center">
+  <div class="login-center" id="main-content">
   <div class="login-card">
     <h1>🎓 Bildungsplan GENT</h1>
     <p class="subtitle">Bitte melde dich an, um den Assistenten zu nutzen.</p>
@@ -138,7 +148,7 @@
       </div>
       <button type="submit" class="login-btn" id="loginBtn">Anmelden</button>
     </form>
-    <p class="error-msg" id="errorMsg"></p>
+    <p class="error-msg" id="errorMsg" aria-live="polite"></p>
   </div>
   </div>
 

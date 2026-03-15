@@ -17,6 +17,10 @@
     .mic-btn:hover { background: var(--accent); color: var(--near-black); }
     .mic-btn.recording { background: #FFF0F0; border-color: #CC0000; animation: pulse 1s infinite; }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
+    @media (prefers-reduced-motion: reduce) {
+      .mic-btn.recording { animation: none; }
+      .cursor { animation: none; }
+    }
     .status-bar {
       font-size: 0.85rem; color: var(--muted); padding: 6px 12px;
       background: var(--card); border: 1px solid var(--border); margin-bottom: 6px;
@@ -149,6 +153,7 @@
   </style>
 </head>
 <body>
+  <a href="#main-content" class="skip-link">Zum Hauptinhalt springen</a>
   <nav class="site-topbar">
     <a href="/" class="brand"><img src="/shared/static/img/euletranspa.png" alt=""><span>Eulen<span class="gold">AI</span></span></a>
     <div class="site-topbar-nav">
@@ -156,8 +161,9 @@
       <a href="/bildungsplan/conversation">Elterngespräch</a>
       <a href="/leichte-sprache/">Leichte Sprache</a>
       <a href="/leichte-sprache/notizen">Notizen</a>
-      <a href="#" id="adminNavBtn" style="display:none;">Verwaltung</a>
-      <a href="#" id="topbarLogoutBtn" style="color:#C9A84C;">Abmelden</a>
+      <a href="/unterrichtsplanung/">Unterrichtsplanung</a>
+      <button id="adminNavBtn" style="display:none;">Verwaltung</button>
+      <button id="topbarLogoutBtn" style="color:#C9A84C;">Abmelden</button>
     </div>
   </nav>
   <div class="app-layout">
@@ -166,7 +172,7 @@
       <span>Gespräche</span>
       <div style="display:flex;gap:6px;align-items:center;">
         <button class="sidebar-new-btn" id="newChatBtn" title="Neues Gespräch starten">+ Neu</button>
-        <button class="sidebar-close-btn" id="sidebarCloseBtn" title="Schließen">✕</button>
+        <button class="sidebar-close-btn" id="sidebarCloseBtn" title="Schließen" aria-label="Schließen">✕</button>
       </div>
     </div>
     <div id="sidebarList" class="sidebar-list"></div>
@@ -189,7 +195,7 @@
       <div id="dbInfo" class="db-info"></div>
     </header>
 
-    <main>
+    <main id="main-content">
       <div id="chatArea" class="chat-area">
         <div id="welcomeMsg" class="welcome-msg">
           <div class="welcome-icon">📚</div>
@@ -205,11 +211,11 @@
       </div>
 
       <div class="input-area">
-        <div id="statusBar" class="status-bar" style="display:none;"></div>
+        <div id="statusBar" class="status-bar" style="display:none;" aria-live="polite"></div>
         <div class="input-row">
-          <button id="micBtn" class="mic-btn" title="Mikrofon (Leertaste)">🎙️</button>
+          <button id="micBtn" class="mic-btn" title="Mikrofon (Leertaste)" aria-label="Mikrofon">🎙️</button>
           <textarea id="userInput" rows="2" placeholder="Stelle eine Frage zum Bildungsplan …" autofocus></textarea>
-          <button id="sendBtn" class="primary send-btn" title="Senden">➤</button>
+          <button id="sendBtn" class="primary send-btn" title="Senden" aria-label="Senden">➤</button>
         </div>
         <div class="input-footer">
           <div style="display:flex;gap:12px;align-items:center;">
@@ -237,9 +243,9 @@
   </div><!-- /.app-layout -->
 
   <!-- Settings Modal -->
-  <div id="promptModal" class="modal" style="display:none;">
+  <div id="promptModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="promptModalTitle" style="display:none;">
     <div class="modal-content">
-      <h3>System‑Prompt anpassen</h3>
+      <h3 id="promptModalTitle">System‑Prompt anpassen</h3>
       <p class="muted">Hier kannst du die Anweisungen ändern, die der Assistent im Hintergrund erhält.</p>
       <textarea id="promptEditor" rows="14"></textarea>
       <div class="modal-actions">
@@ -250,9 +256,9 @@
   </div>
 
   <!-- Memories Modal -->
-  <div id="memoriesModal" class="modal" style="display:none;">
+  <div id="memoriesModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="memoriesModalTitle" style="display:none;">
     <div class="modal-content">
-      <h3>🧠 Erinnerungen</h3>
+      <h3 id="memoriesModalTitle">🧠 Erinnerungen</h3>
       <p class="muted">Der Assistent berücksichtigt diese Informationen bei jeder Antwort – z.B. deine Schule, Klasse, Fächer oder Vorlieben.</p>
       <div id="memoriesList" class="memories-list"></div>
       <div class="memory-add-row">
@@ -265,12 +271,12 @@
     </div>
   </div>
 
-  <div id="toastBar"></div>
+  <div id="toastBar" aria-live="polite" role="status"></div>
 
   <!-- Memory Review Modal -->
-  <div id="memoryReviewModal" class="modal" style="display:none;">
+  <div id="memoryReviewModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="memoryReviewModalTitle" style="display:none;">
     <div class="modal-content" style="max-width:500px;">
-      <h3>🧠 Neue Erinnerungen speichern?</h3>
+      <h3 id="memoryReviewModalTitle">🧠 Neue Erinnerungen speichern?</h3>
       <p class="muted" style="margin-bottom:12px;">Der Assistent hat aus dem Gespräch folgende Informationen extrahiert. Wähle aus, was du dauerhaft merken möchtest:</p>
       <div id="memoryReviewList" style="max-height:280px;overflow-y:auto;margin-bottom:14px;"></div>
       <div class="modal-actions">
@@ -281,9 +287,9 @@
   </div>
 
   <!-- Admin Modal -->
-  <div id="adminModal" class="modal" style="display:none;">
+  <div id="adminModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="adminModalTitle" style="display:none;">
     <div class="modal-content" style="max-width:560px;">
-      <h3>⚙ Admin-Bereich</h3>
+      <h3 id="adminModalTitle">⚙ Admin-Bereich</h3>
       <div class="admin-tabs">
         <button class="admin-tab-btn active" data-tab="users">👥 Nutzer</button>
         <button class="admin-tab-btn" data-tab="models">🤖 Modelle</button>
